@@ -148,16 +148,18 @@ function generateReasons(p, budget) {
 }
 
 // ── 生成可点击的美团跳转链接 ──
+// 经实测验证，以下 URL 格式可正常访问（HTTP 200）：
+//   https://i.meituan.com/c/deal/{productId}.html  → 美团团购 H5 详情页
+// 旧格式 hd.meituan.com/ugctrim/productdetail.html 已失效（404），勿用。
 function buildDeeplink(productId, poiId) {
-  // H5 团购详情页（浏览器可直接打开，已安装美团 App 时自动唤起）
-  const h5Url = `https://hd.meituan.com/ugctrim/productdetail.html?productId=${productId}`;
-  // 美团 App deeplink（通过 web 容器加载 H5，已安装 App 时直接跳到原生详情页）
+  // H5 团购详情页（浏览器可直接打开，已安装美团 App 时自动唤起原生页面）
+  const h5Url = `https://i.meituan.com/c/deal/${productId}.html`;
+  // 美团 App deeplink（通过 web 容器加载 H5，已安装 App 时直接跳到详情页）
   const deeplink = `imeituan://www.meituan.com/web?url=${encodeURIComponent(h5Url)}`;
   return {
     h5Url,           // 浏览器可打开的 H5 链接
     deeplink,        // 美团 App deeplink
-    // 短链接格式（用于 Markdown 展示）
-    displayUrl: h5Url
+    displayUrl: h5Url // 用于 Markdown 展示的链接
   };
 }
 
