@@ -1,0 +1,12 @@
+{
+  "name": "what-to-eat-today",
+  "version": "1.0.0",
+  "deploy": {
+    "source": "/workspace/what-to-eat-today",
+    "target": "/root/.codebuddy/plugins/marketplaces/experts/plugins/what-to-eat-today",
+    "register": {
+      "marketplace": "/root/.codebuddy/plugins/marketplaces/experts/.codebuddy-plugin/marketplace.json",
+      "settings": "/root/.codebuddy/settings.json"
+    }
+  }
+}

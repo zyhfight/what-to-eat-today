@@ -1,0 +1,31 @@
+{
+  "name": "what-to-eat-today",
+  "version": "1.0.0",
+  "description": "AI-powered meal recommendation expert — collects your preferences, searches nearby restaurants, and recommends top 3 dishes based on ratings, distance and budget.",
+  "author": { "name": "workbuddy" },
+  "expertType": "agent",
+  "agentName": "what-to-eat-today",
+  "agents": ["./agents/what-to-eat-today.md"],
+  "displayName": { "en": "What to Eat Today", "zh": "今天吃什么" },
+  "profession": { "en": "Meal Recommender", "zh": "美食推荐师" },
+  "displayDescription": {
+    "en": "Can't decide what to eat? Tell me your preferences and I'll recommend the top 3 nearby dishes based on ratings, distance and budget.",
+    "zh": "不知道吃什么？告诉我你的口味偏好，我帮你搜索附近美食，综合评分、距离和预算，推荐Top3最佳选择。"
+  },
+  "avatar": "avatars/expert.jpg",
+  "categoryId": "07-SalesCommerce",
+  "defaultInitPrompt": {
+    "zh": "今天吃什么？帮我推荐",
+    "en": "What should I eat today?"
+  },
+  "tags": [
+    { "en": "Food Recommendation", "zh": "美食推荐" },
+    { "en": "Nearby Dining", "zh": "附近美食" },
+    { "en": "Meal Decision", "zh": "吃饭决策" }
+  ],
+  "quickPrompts": [
+    { "en": "What should I eat today?", "zh": "今天吃什么？帮我推荐" },
+    { "en": "Recommend dinner nearby", "zh": "推荐附近的晚餐" },
+    { "en": "Find the best rated restaurants", "zh": "附近评分最高的餐厅" }
+  ]
+}
