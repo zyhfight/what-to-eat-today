@@ -199,7 +199,9 @@ score = 0.4 * (poiDpFiveScore/5) + 0.3 * (1 - distance_km/8) + 0.2 * budget_matc
 
 ### 展示格式
 
-每个推荐以卡片形式展示，图片尺寸替换为 134×134（URL 中 `267h_267w` → `134h_134w`）：
+每个推荐以卡片形式展示，图片尺寸替换为 134×134（URL 中 `267h_267w` → `134h_134w`）。
+
+**关键：每个推荐必须包含可点击的「查看详情 & 下单」链接**，链接来自推荐引擎返回的 `h5Url` 字段，用 Markdown 超链接格式 `[📱 查看详情 & 下单]({h5Url})` 展示。用户点击后在浏览器中打开美团团购详情页，已安装美团 App 时自动唤起 App。
 
 ```
 🥇 **推荐一：{poiName}**
@@ -211,6 +213,8 @@ score = 0.4 * (poiDpFiveScore/5) + 0.3 * (1 - distance_km/8) + 0.2 * budget_matc
 💡 {reason1} · {reason2}
 
 ![|134]({imageUrl})
+
+[📱 查看详情 & 下单]({h5Url})
 
 ---
 
@@ -224,6 +228,8 @@ score = 0.4 * (poiDpFiveScore/5) + 0.3 * (1 - distance_km/8) + 0.2 * budget_matc
 
 ![|134]({imageUrl})
 
+[📱 查看详情 & 下单]({h5Url})
+
 ---
 
 🥉 **推荐三：{poiName}**
@@ -235,6 +241,8 @@ score = 0.4 * (poiDpFiveScore/5) + 0.3 * (1 - distance_km/8) + 0.2 * budget_matc
 💡 {reason1} · {reason2}
 
 ![|134]({imageUrl})
+
+[📱 查看详情 & 下单]({h5Url})
 
 ---
 

@@ -147,6 +147,20 @@ function generateReasons(p, budget) {
   return reasons.slice(0, 2);
 }
 
+// ── 生成可点击的美团跳转链接 ──
+function buildDeeplink(productId, poiId) {
+  // H5 团购详情页（浏览器可直接打开，已安装美团 App 时自动唤起）
+  const h5Url = `https://hd.meituan.com/ugctrim/productdetail.html?productId=${productId}`;
+  // 美团 App deeplink（通过 web 容器加载 H5，已安装 App 时直接跳到原生详情页）
+  const deeplink = `imeituan://www.meituan.com/web?url=${encodeURIComponent(h5Url)}`;
+  return {
+    h5Url,           // 浏览器可打开的 H5 链接
+    deeplink,        // 美团 App deeplink
+    // 短链接格式（用于 Markdown 展示）
+    displayUrl: h5Url
+  };
+}
+
 // ── Main ──
 const args = parseArgs(process.argv);
 const lat = args.lat, lng = args.lng, cityId = args['city-id'], token = args.token;
@@ -187,18 +201,23 @@ for (const p of scored) {
 const top3 = Array.from(poiMap.values())
   .sort((a, b) => b.score - a.score)
   .slice(0, 3)
-  .map((p, i) => ({
-    rank: i + 1,
-    productId: p.productId,
-    poiId: p.poiId,
-    poiName: p.poiName,
-    productName: p.productName,
-    salePrice: p.salePrice,
-    distanceText: p.distanceText,
-    poiDpFiveScore: p.poiDpFiveScore,
-    imageUrl: p.imageUrl,
-    score: Math.round(p.score * 100) / 100,
-    reasons: generateReasons(p, budget)
-  }));
+  .map((p, i) => {
+    const links = buildDeeplink(p.productId, p.poiId);
+    return {
+      rank: i + 1,
+      productId: p.productId,
+      poiId: p.poiId,
+      poiName: p.poiName,
+      productName: p.productName,
+      salePrice: p.salePrice,
+      distanceText: p.distanceText,
+      poiDpFiveScore: p.poiDpFiveScore,
+      imageUrl: p.imageUrl,
+      score: Math.round(p.score * 100) / 100,
+      reasons: generateReasons(p, budget),
+      h5Url: links.h5Url,
+      deeplink: links.deeplink
+    };
+  });
 
 out({ ok: true, recommendations: top3, keywords, totalSearched: allProducts.length });
