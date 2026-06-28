@@ -39,19 +39,8 @@ fi
 
 echo -e "${GREEN}   ✓ 插件源文件完整${NC}"
 
-# ── 2. 检查美团专家依赖 ──
-echo -e "${YELLOW}[2/5] 检查美团专家依赖...${NC}"
-
-MEITUAN_DIR="$MARKET_DIR/meituan-living-assistant"
-if [ -d "$MEITUAN_DIR" ]; then
-    echo -e "${GREEN}   ✓ 美团专家已安装${NC}"
-else
-    echo -e "${YELLOW}   ⚠ 美团专家未安装，部分功能（下单）需要它${NC}"
-    echo "   请先在 CodeBuddy 中启用「领券下单找我」专家"
-fi
-
-# ── 3. 复制插件文件 ──
-echo -e "${YELLOW}[3/5] 安装插件文件...${NC}"
+# ── 2. 复制插件文件 ──
+echo -e "${YELLOW}[2/4] 安装插件文件...${NC}"
 
 mkdir -p "$MARKET_DIR"
 
@@ -63,8 +52,8 @@ fi
 cp -r "$PLUGIN_SRC" "$PLUGIN_DIR"
 echo -e "${GREEN}   ✓ 插件已安装到 $PLUGIN_DIR${NC}"
 
-# ── 4. 注册到市场 ──
-echo -e "${YELLOW}[4/5] 注册到专家市场...${NC}"
+# ── 3. 注册到市场 ──
+echo -e "${YELLOW}[3/4] 注册到专家市场...${NC}"
 
 if [ ! -f "$MARKET_FILE" ]; then
     echo '{"name":"experts","description":"Expert marketplace","plugins":[]}' > "$MARKET_FILE"
@@ -89,8 +78,8 @@ with open('$MARKET_FILE', 'w') as f:
     echo -e "${GREEN}   ✓ 已注册到市场${NC}"
 fi
 
-# ── 5. 启用插件 ──
-echo -e "${YELLOW}[5/5] 启用插件...${NC}"
+# ── 4. 启用插件 ──
+echo -e "${YELLOW}[4/4] 启用插件...${NC}"
 
 if [ ! -f "$SETTINGS_FILE" ]; then
     echo '{"enabledPlugins":{}}' > "$SETTINGS_FILE"

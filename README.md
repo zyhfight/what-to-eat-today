@@ -30,12 +30,18 @@ bash install.sh
 what-to-eat-today/
 ├── .codebuddy-plugin/plugin.json   # 插件清单
 ├── agents/what-to-eat-today.md     # Agent 提示词
-├── scripts/recommend.js            # 推荐引擎（搜索+评分排序）
+├── scripts/
+│   ├── run.js                      # 美团 API 统一入口（环境初始化、登录、搜索、下单、领券）
+│   ├── recommend.js                # 推荐引擎（关键词生成+搜索+评分排序）
+│   ├── auth.py                     # 设备 token 管理
+│   ├── config.json                 # 配置
+│   └── vendor/cliguard/            # API 签名库
+├── references/                     # 诊断工具
 ├── install.sh                      # 一键部署脚本
 └── settings.json                   # 部署配置
 ```
 
 ## 依赖
 
-- 「领券下单找我」专家（meituan-living-assistant）
-- 美团账号
+- 美团账号（首次使用需扫码登录授权）
+- 无需依赖其他专家，完全自包含
