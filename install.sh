@@ -19,7 +19,8 @@ echo ""
 echo -e "${YELLOW}[1/5] 检测环境...${NC}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_SRC="$SCRIPT_DIR/what-to-eat-today"
+# install.sh 在插件目录内，源文件就是 SCRIPT_DIR 自身
+PLUGIN_SRC="$SCRIPT_DIR"
 PLUGIN_DIR="/root/.codebuddy/plugins/marketplaces/experts/plugins/what-to-eat-today"
 MARKET_DIR="/root/.codebuddy/plugins/marketplaces/experts/plugins"
 MARKET_FILE="/root/.codebuddy/plugins/marketplaces/experts/.codebuddy-plugin/marketplace.json"
