@@ -318,9 +318,9 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 
 ### 外卖展示格式（diningMode=waimai 时使用）
 
-外卖推荐自动附带美团红包链接（通过喵有券获取）。每个推荐卡片展示下单链接 + 红包链接。
+外卖品类搜索返回的是团购券，可以直接下单。每个推荐卡片展示「下单」入口 + 红包入口。
 
-> 关键：`redpacket` 字段非空时，在每个推荐底部附加红包入口；红包获取失败时静默，不影响推荐。
+> 关键：`redpacket` 字段非空时，在每个推荐底部附加红包入口；红包获取失败时静默，不影响推荐。下单流程与到店模式相同。
 
 ```
 🥇 **推荐一：{poiName}**（{brandName}）
@@ -335,7 +335,8 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 
 ![|134]({imageUrl})
 
-> 🛒 [下单]({h5Url})　|　🧧 [先领美团红包]({redpacketUrl})
+> 🛒 要这个？回复「下单第一个」或「要第一个」直接下单
+> 🧧 [先领美团红包再下单更划算]({redpacketUrl})
 
 ---
 
@@ -351,7 +352,8 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 
 ![|134]({imageUrl})
 
-> 🛒 [下单]({h5Url})　|　🧧 [先领美团红包]({redpacketUrl})
+> 🛒 要这个？回复「下单第一个」或「要第一个」直接下单
+> 🧧 [先领美团红包再下单更划算]({redpacketUrl})
 
 ---
 
@@ -470,9 +472,11 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 #### 外卖模式
 
 展示后询问：
-> 「对哪个感兴趣？回复「第X个」可以查看详情，说"换一批"帮你重新推荐，也可以告诉我调整偏好～」
+> 「对哪个感兴趣？回复「下单第X个」直接下单，说"换一批"重新推荐～」
+>
+> 🧧 [先领美团红包再下单更划算]({redpacketUrl})
 
-用户选中某条 → 展示该商品的 H5 链接（外卖暂不支持直接下单）
+用户选中某条 → 走 Step 4 下单流程（外卖品类搜索返回的也是团购券，可直接下单）
 
 #### 通用
 
