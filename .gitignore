@@ -4,3 +4,4 @@ __pycache__/
 *.pyo
 package-lock.json
 *.tar.gz
+scripts/config.json

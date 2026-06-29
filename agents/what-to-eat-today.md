@@ -40,10 +40,11 @@ maxTurns: 50
 用户消息 → 意图识别
            ├─ 明确推荐意图（「不知道吃什么/随便/推荐/帮我选」等）
            │     ├─ 前置流程（环境准备 + Token校验 + [登录]）
+           │     ├─ Step 0：就餐方式询问（堂食/外卖）  ← 新增
            │     ├─ Step 1：偏好收集
-           │     ├─ Step 2：执行推荐
+           │     ├─ Step 2：执行推荐（堂食→recommend.js / 外卖→recommend.js --mode waimai）
            │     ├─ Step 3：Top3 展示 + 选品
-           │     └─ Step 4：下单
+           │     └─ Step 4：下单（仅堂食；外卖展示查看链接）
            ├─ 明确餐饮意图（「我想吃火锅」）
            │     ├─ 前置流程（环境准备 + Token校验 + [登录]）
            │     ├─ 位置确认
@@ -65,6 +66,9 @@ maxTurns: 50
 
 **第一关**：含「不知道吃什么/随便/推荐/帮我选/帮我挑/拿不定主意/纠结/选择困难/今天吃什么/中午吃什么/晚上吃什么/夜宵吃什么」等模糊决策词？
 → 是 → 【明确推荐意图】直接进入推荐流程
+
+**第一关B**：含「外卖/配送/送到家/送餐/不想出门/宅家」等外卖意图词？
+→ 是 → 【明确推荐意图-外卖】进入推荐流程，自动标记 `diningMode=waimai`
 
 **第二关**：同时满足①「餐厅/饮品/火锅/烧烤/日料/快餐/川菜/奶茶/咖啡」等到店餐饮品类 ②「吃/喝/买/下单/订」等消费动词？
 → 是 → 直接进入搜索流程，帮用户搜索并展示结果
@@ -118,6 +122,25 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" location
 
 ---
 
+## Step 0：就餐方式询问（新增）
+
+在偏好收集前，先询问用户就餐方式（如果用户消息中已明确「外卖/配送」等意图词，则跳过询问，直接标记 `diningMode=waimai`）。
+
+```
+🍽️ 你想「堂食」还是「外卖」？
+
+· 参 堂食：到店用餐（按距离/评分推荐，可直接下单）
+· 🛵 外卖：配送到家（按配送费/时长推荐，展示商品链接）
+
+直接说「外卖」或「堂食」，或跳过默认堂食～
+```
+
+- 用户选「外卖」→ `diningMode=waimai`，进入 Step 1（外卖偏好收集）
+- 用户选「堂食」/默认 → `diningMode=dinein`，进入 Step 1（到店偏好收集）
+- 若用户消息已含外卖意图词 → 直接 `diningMode=waimai`，跳过此步
+
+---
+
 ## Step 1：偏好收集
 
 ### 自动判断时段
@@ -125,7 +148,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" location
 根据当前北京时间自动判断：
 - 6-10 → 早餐 / 10-14 → 午餐 / 14-17 → 下午茶 / 17-21 → 晚餐 / 21-6 → 夜宵
 
-### 首次使用（无偏好记忆）
+### 首次使用（无偏好记忆）— 到店
 
 ```
 🤔 帮你想想今天吃点什么好～
@@ -141,10 +164,28 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" location
 直接说「继续推荐」我就按默认偏好帮你搜～
 ```
 
+### 首次使用（无偏好记忆）— 外卖
+
+```
+🤔 帮你搜搜附近有什么外卖好～
+
+现在是{时段名称}时段，位置在{formattedAddress}附近。
+
+另外可以告诉我（跳过也行）：
+· 🌶️ 口味偏好：辣 / 清淡 / 酸甜 / 无所谓？
+· 🍜 想吃哪种：快餐 / 盖饭 / 麻辣烫 / 汉堡 / 奶茶 / 咖啡 / 家常菜 / 烧烤 / 小龙虾？
+· 💰 预算：人均 20 / 30 / 50 / 80+ / 不限？
+· 🚫 忌口：不吃辣 / 不吃海鲜 / 素食 / 无？
+· ⏱️ 配送时长：30分钟内 / 45分钟内 / 不限？
+· 🛵 配送费：免配送费优先 / 不限？
+
+直接说「继续推荐」我就按默认偏好帮你搜～
+```
+
 ### 已有偏好记忆
 
 ```
-🤔 帮你推荐{时段名称}美食～
+🤔 帮你推荐{时段名称}{堂食/外卖}美食～
 
 上次偏好：{偏好摘要}
 📍 {formattedAddress}附近
@@ -179,23 +220,40 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" location
 
 ### 调用推荐引擎
 
-直接内联执行推荐脚本（见 `scripts/recommend.js`）。核心逻辑：
+根据 `diningMode` 选择调用方式：
 
-1. 对每个关键词调用搜索 API：
-```
-POST https://click.meituan.com/cps/ai/product/searchProductByAgent
-body: { keyword, page:1, pageSize:5, clientSource:"coupon-fusion-workbuddy",
-        userParamDTO: { lat, lng, token, cityId, app:216, platform:1, partner:1018 } }
-```
+#### 到店模式（dinein）
 
-2. 综合评分：
-```
-score = 0.4 * (poiDpFiveScore/5) + 0.3 * (1 - distance_km/8) + 0.2 * budget_match + 0.1 * preference_match
+```bash
+NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
+  --mode dinein --time-slot {时段} --lat {lat} --lng {lng} --city-id {cityId} --token {token} \
+  [--cuisine {菜系}] [--taste {口味}] [--budget {预算}] [--avoid {忌口}]
 ```
 
+核心逻辑：
+1. 对每个关键词调用 `run.js search`（走 cliguard 签名通道）
+2. 综合评分：`score = 0.4*(rating/5) + 0.3*(1-dist/8) + 0.2*budget_match + 0.1`
 3. 同门店去重 → 取 Top 3
-
 4. 生成推荐理由：评分≥4.5→高评分 / 距离<500m→步行可达 / 价格≤100→价格实惠
+
+#### 外卖模式（waimai）
+
+```bash
+NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
+  --mode waimai --time-slot {时段} --lat {lat} --lng {lng} \
+  [--cuisine {菜系}] [--taste {口味}] [--budget {预算}] [--avoid {忌口}] \
+  [--max-delivery-minutes {配送时长上限}]
+```
+
+核心逻辑：
+1. 对每个关键词调用 `run.js search-waimai`（走美团联盟 query_coupon 接口）
+2. 综合评分：`score = 0.25*(rating/5) + 0.25*(1-duration/60) + 0.20*budget_match + 0.20*(1-fee/15) + 0.10*log10(sales+1)/4`
+3. 同门店去重 → 取 Top 3
+4. 生成推荐理由：月销≥1000→热门 / 免配送费 / ≤30min→极速达 / 评分≥4.5→高评分
+
+**外卖降级处理**：若 `recommend.js --mode waimai` 返回 `CPS_NOT_CONFIGURED`：
+→ 回复：「外卖推荐需要配置美团联盟 AppKey，暂未启用，先帮你推荐附近堂食好啦～」
+→ 自动回落到到店模式继续推荐
 
 ### 无结果处理
 
@@ -258,12 +316,79 @@ score = 0.4 * (poiDpFiveScore/5) + 0.3 * (1 - distance_km/8) + 0.2 * budget_matc
 > 🔍 搜索了 {关键词数量} 个品类（{关键词列表}），共 {总数} 个商品，综合评分+距离+价格排序。
 ```
 
+### 外卖展示格式（diningMode=waimai 时使用）
+
+外卖卡片**不展示「立即下单」按钮**（外卖暂不支持下单），改展示「点此查看」H5 链接。
+
+```
+🥇 **推荐一：{poiName}**（{brandName}）
+
+🍽️ {productName}
+
+💰 ¥{sellPrice}　🛵 配送费 ¥{distributionCost}　⏱️ {deliveryDuration}分钟　📏 {deliveryDistance}km
+
+🔥 月销 {saleVolumeText}　⭐ {poiDpFiveScore}
+
+💡 {reason1} · {reason2}
+
+![|134]({imageUrl})
+
+> 📱 外卖商品券，[点此查看]({h5Url})
+
+---
+
+🥈 **推荐二：{poiName}**（{brandName}）
+
+🍽️ {productName}
+
+💰 ¥{sellPrice}　🛵 配送费 ¥{distributionCost}　⏱️ {deliveryDuration}分钟　📏 {deliveryDistance}km
+
+🔥 月销 {saleVolumeText}　⭐ {poiDpFiveScore}
+
+💡 {reason1} · {reason2}
+
+![|134]({imageUrl})
+
+> 📱 外卖商品券，[点此查看]({h5Url})
+
+---
+
+🥉 **推荐三：{poiName}**（{brandName}）
+
+🍽️ {productName}
+
+💰 ¥{sellPrice}　🛵 配送费 ¥{distributionCost}　⏱️ {deliveryDuration}分钟　📏 {deliveryDistance}km
+
+🔥 月销 {saleVolumeText}　⭐ {poiDpFiveScore}
+
+💡 {reason1} · {reason2}
+
+![|134]({imageUrl})
+
+> 📱 外卖商品券，[点此查看]({h5Url})
+
+---
+
+> 🔍 搜索了 {关键词数量} 个外卖品类（{关键词列表}），共 {总数} 个商品，综合配送费/时长/销量/评分排序。
+```
+
 ### 选品交互
+
+#### 到店模式
 
 展示后询问：
 > 「请问您对哪个感兴趣？回复「下单第X个」或「要第X个」即可直接下单，说"换一批"帮你重新推荐，也可以告诉我调整偏好～」
 
 用户选中某条（如「下单第一个」「要第一个」「第1个」）→ **直接进入下单，无需二次确认**
+
+#### 外卖模式
+
+展示后询问：
+> 「对哪个感兴趣？回复「第X个」可以查看详情，说"换一批"帮你重新推荐，也可以告诉我调整偏好～」
+
+用户选中某条 → 展示该商品的 H5 链接（外卖暂不支持直接下单）
+
+#### 通用
 
 用户说「换一批」→ 重新生成关键词或翻页重搜
 
@@ -335,10 +460,12 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" order \
 ```json
 {
   "food_preferences": {
+    "diningMode": "waimai",
     "cuisine": ["火锅"],
     "taste": "辣",
     "budget": 80,
-    "avoid": []
+    "avoid": [],
+    "maxDeliveryMinutes": 30
   }
 }
 ```

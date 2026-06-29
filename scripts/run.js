@@ -16,6 +16,8 @@
  *   issue                         领券
  *   hotword --city-id <id>        热搜词查询
  *   search --keyword <kw> --lat <lat> --lng <lng> --city-id <id> [--page N] [--page-size N] [--query-id Q] [--request-id R] [--max-distance-km D]
+ *   search-waimai --keyword <kw> --lat <lat> --lng <lng> [--page N] [--page-size N] [--sort-field 1|2|6] [--search-id <id>]
+ *                                外卖商品搜索（美团联盟 query_coupon 接口，需配置 AppKey）
  *   location                      获取用户近期位置
  *   location-by-address --address <addr>  根据地址获取经纬度
  *   order --product-id <pid> --poi-id <pid> --city-id <id> --uuid <u> [--lat <lat>] [--lng <lng>] [--quantity N]
@@ -422,6 +424,60 @@ function httpsPost(urlStr, bodyObj, extraHeaders) {
       res.on('data', function (chunk) { chunks.push(chunk); });
       res.on('end', function () {
         const body = Buffer.concat(chunks).toString('utf-8');
+        try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
+        catch (_) { resolve({ status: res.statusCode, data: null, raw: body }); }
+      });
+    });
+    req.on('error', function (e) { reject(e); });
+    req.setTimeout(15000, function () { req.destroy(); reject(new Error('TIMEOUT')); });
+    req.write(bodyBuf);
+    req.end();
+  });
+}
+
+// ── 美团联盟开放 API 签名（独立于 cliguard mtgsig 体系）──────────────
+// 签名算法（经 Java 实现验证）：
+//   1. Content-MD5 = Base64(MD5(body))
+//   2. Headers 按 TreeMap 排序：S-Ca-App + S-Ca-Timestamp
+//   3. 签名字符串 = POST\n + Content-MD5\n + Headers\n + Path
+//   4. signature = Base64(HmacSHA256(secret, signString))
+function signCpsOpenRequest(appKey, appSecret, bodyStr, apiPath) {
+  var timestamp = String(Date.now());
+  var md5Buf = crypto.createHash('md5').update(bodyStr, 'utf-8').digest();
+  var contentMd5 = md5Buf.toString('base64');
+  var headersStr = 'S-Ca-App:' + appKey + '\nS-Ca-Timestamp:' + timestamp;
+  var signStr = 'POST\n' + contentMd5 + '\n' + headersStr + '\n' + apiPath;
+  var signature = crypto.createHmac('sha256', appSecret).update(signStr, 'utf-8').digest('base64');
+  return {
+    'S-Ca-App': appKey,
+    'S-Ca-Signature': signature,
+    'S-Ca-Timestamp': timestamp,
+    'S-Ca-Signature-Headers': 'S-Ca-App,S-Ca-Timestamp',
+    'Content-MD5': contentMd5,
+    'Content-Type': 'application/json'
+  };
+}
+
+// 不走 cliguard 的纯 https POST（用于联盟 API，避免 mtgsig 头污染）
+function cpsOpenPost(urlStr, bodyStr, headers) {
+  return new Promise(function (resolve, reject) {
+    var bodyBuf = Buffer.from(bodyStr, 'utf-8');
+    var parsed = new URL(urlStr);
+    var options = {
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      headers: Object.assign({
+        'Content-Length': bodyBuf.length,
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+      }, headers || {})
+    };
+    var req = https.request(options, function (res) {
+      var chunks = [];
+      res.on('data', function (chunk) { chunks.push(chunk); });
+      res.on('end', function () {
+        var body = Buffer.concat(chunks).toString('utf-8');
         try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
         catch (_) { resolve({ status: res.statusCode, data: null, raw: body }); }
       });
@@ -870,6 +926,117 @@ commands.search = function (argv) {
       out({ ok: false, success: false, error: e.message });
     });
 };
+
+/**
+ * search-waimai — 外卖商品搜索（美团联盟 query_coupon 接口）
+ * 用法: node run.js search-waimai --keyword <kw> --lat <lat> --lng <lng>
+ *        [--page N] [--page-size N] [--sort-field 1|2|6] [--search-id <id>]
+ *
+ * 需在 config.json 中配置 cpsOpen.appKey / appSecret。
+ * 经纬度转换：lat/lng（浮点）→ latitude/longitude（×1000000 取整）。
+ */
+commands['search-waimai'] = function (argv) {
+  var { args } = parseArgs(argv || []);
+  var required = ['keyword', 'lat', 'lng'];
+  for (var i = 0; i < required.length; i++) {
+    if (!args[required[i]]) fail('MISSING_PARAM', { param: required[i] });
+  }
+
+  var config;
+  try {
+    config = JSON.parse(fs.readFileSync(path.join(SCRIPTS_DIR, 'config.json'), 'utf-8'));
+  } catch (e) {
+    out({ ok: false, error: 'CONFIG_READ_FAILED', message: '读取 config.json 失败: ' + e.message });
+    return;
+  }
+  var cps = config.cpsOpen || {};
+  if (!cps.appKey || !cps.appSecret) {
+    out({ ok: false, error: 'CPS_NOT_CONFIGURED', message: '未配置美团联盟 AppKey/AppSecret，请在 config.json 中填写 cpsOpen 配置' });
+    return;
+  }
+
+  var lat = parseFloat(args.lat), lng = parseFloat(args.lng);
+  var pageNo = parseInt(args.page || '1', 10);
+  var pageSize = parseInt(args['page-size'] || '10', 10);
+  var sortField = parseInt(args['sort-field'] || '1', 10);
+
+  var body = {
+    platform: 1,           // 1=到家业务
+    bizLine: null,         // null=外卖商品券
+    searchText: args.keyword,
+    latitude: Math.round(lat * 1000000),
+    longitude: Math.round(lng * 1000000),
+    sortField: sortField,
+    pageNo: pageNo,
+    pageSize: pageSize
+  };
+  if (args['search-id']) body.searchId = args['search-id'];
+
+  var bodyStr = JSON.stringify(body);
+  var apiPath = '/cps_open/common/api/v1/query_coupon';
+  var headers = signCpsOpenRequest(cps.appKey, cps.appSecret, bodyStr, apiPath);
+  var endpoint = cps.endpoint || 'https://media.meituan.com/cps_open/common/api/v1/query_coupon';
+
+  cpsOpenPost(endpoint, bodyStr, headers).then(function (resp) {
+    var data = resp.data;
+    if (data && data.code === 0 && data.data) {
+      // 联盟 API 成功返回 code=0
+      var list = data.data.list || data.data || [];
+      if (!Array.isArray(list)) list = [];
+      var products = list.map(normalizeWaimaiItem);
+      out({
+        ok: true, success: true,
+        productList: products,
+        searchId: String((data.data && data.data.searchId) || ''),
+        hasNext: !!data.data.hasNext,
+        pageNo: pageNo, pageSize: pageSize
+      });
+    } else if (data && data.code === 0 && (!data.data || (Array.isArray(data.data) && data.data.length === 0))) {
+      // 成功但无数据
+      out({ ok: true, success: true, productList: [], searchId: '', pageNo: pageNo, pageSize: pageSize });
+    } else {
+      out({ ok: false, success: false, error: 'API_ERROR', code: data && data.code, message: (data && data.message) || '外卖搜索失败' });
+    }
+  }).catch(function (e) {
+    out({ ok: false, success: false, error: e.message });
+  });
+};
+
+/**
+ * 标准化外卖商品对象（把联盟 API 嵌套结构拍平）
+ */
+function normalizeWaimaiItem(item) {
+  var poi = item.deliverablePoiInfo || {};
+  var coupon = item.couponPackDetail || {};
+  var brand = item.brandInfo || {};
+  // 图片尺寸替换 267h_267w → 134h_134w
+  var imageUrl = coupon.headUrl || '';
+  imageUrl = imageUrl.replace('267h_267w', '134h_134w');
+  // 解析销量数字（如 "10000+" → 10000）
+  var saleVolume = 0;
+  if (coupon.saleVolume) {
+    var svMatch = String(coupon.saleVolume).match(/([\d]+)/);
+    if (svMatch) saleVolume = parseInt(svMatch[1], 10);
+  }
+  return {
+    productId: String(coupon.productId || coupon.skuViewId || ''),
+    poiId: String(poi.poiId || ''),
+    poiName: poi.poiName || '',
+    brandName: brand.brandName || '',
+    productName: coupon.name || '',
+    sellPrice: String(coupon.sellPrice || '0'),
+    originalPrice: String(coupon.originalPrice || '0'),
+    imageUrl: imageUrl,
+    poiDpFiveScore: parseFloat(poi.poiDpFiveScore) || 0,
+    deliveryDistance: parseFloat(poi.deliveryDistance) || 0,
+    distributionCost: parseFloat(poi.distributionCost) || 0,
+    deliveryDuration: parseInt(poi.deliveryDuration, 10) || 0,
+    lastDeliveryFee: parseFloat(poi.lastDeliveryFee) || 0,
+    saleVolume: saleVolume,
+    saleVolumeText: coupon.saleVolume || '',
+    deeplink: coupon.deeplink || ''
+  };
+}
 
 /**
  * location — 获取用户近期位置
