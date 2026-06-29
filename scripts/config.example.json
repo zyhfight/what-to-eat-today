@@ -1,8 +1,8 @@
 {
   "aiScene": "a0d4da77f918ab204d86c911fcdd0ce1",
   "cpsOpen": {
-    "appKey": "",
-    "appSecret": "",
+    "appKey": "YOUR_MEITUAN_APP_KEY",
+    "appSecret": "YOUR_MEITUAN_APP_SECRET",
     "endpoint": "https://media.meituan.com/cps_open/common/api/v1/query_coupon"
   },
   "eleme": {
@@ -11,5 +11,9 @@
     "pid": "alsc_YOUR_PID",
     "cityCode": "330100",
     "endpoint": "https://eco.taobao.com/router/rest"
+  },
+  "aggregate": {
+    "ecapiKey": "YOUR_ECAPI_KEY",
+    "endpoint": "http://api.web.ecapi.cn"
   }
 }

@@ -22,6 +22,7 @@
  *   search-eleme [--city-code 330100] [--keyword <kw>] [--max-price N] [--page N] [--page-size N]
  *                                从缓存中搜索饿了么推广商品
  *   eleme-detail --item-id <id>                 获取饿了么单品推广详情（含推广链接）
+ *   aggregate-redpacket --platform meituan|eleme  通过喵有券获取外卖红包链接
  *   location                      获取用户近期位置
  *   location-by-address --address <addr>  根据地址获取经纬度
  *   order --product-id <pid> --poi-id <pid> --city-id <id> --uuid <u> [--lat <lat>] [--lng <lng>] [--quantity N]
@@ -1363,6 +1364,103 @@ function normalizeElemeItem(item) {
     wxPath: link.wx_path || '',
     alipayScheme: link.alipay_scheme_url || ''
   };
+}
+
+/**
+ * aggregate-redpacket — 通过喵有券聚合平台获取美团/饿了么外卖红包链接
+ * 用法: node run.js aggregate-redpacket --platform meituan|eleme
+ *
+ * 个人开发者无需企业资质，注册喵有券(console.ecapi.cn)获取 apikey 即可。
+ */
+commands['aggregate-redpacket'] = function (argv) {
+  var { args } = parseArgs(argv || []);
+  var platform = args.platform || 'meituan';
+  if (platform !== 'meituan' && platform !== 'eleme') {
+    out({ ok: false, error: 'INVALID_PLATFORM', message: 'platform 必须为 meituan 或 eleme' });
+    return;
+  }
+
+  var config;
+  try {
+    config = JSON.parse(fs.readFileSync(path.join(SCRIPTS_DIR, 'config.json'), 'utf-8'));
+  } catch (e) {
+    out({ ok: false, error: 'CONFIG_READ_FAILED' });
+    return;
+  }
+  var agg = config.aggregate || {};
+  if (!agg.ecapiKey) {
+    out({ ok: false, error: 'AGGREGATE_NOT_CONFIGURED', message: '未配置喵有券 apikey，请在 config.json 的 aggregate.ecapiKey 中填写' });
+    return;
+  }
+
+  var endpoint = agg.endpoint || 'http://api.web.ecapi.cn';
+  var eid = args.eid || 'common';
+
+  if (platform === 'meituan') {
+    var url = endpoint + '/platform/meituan_v2?apkey=' + encodeURIComponent(agg.ecapiKey) + '&eid=' + encodeURIComponent(eid);
+    httpsGetSimple(url).then(function (resp) {
+      var data = resp.data;
+      if (data && data.code === 200 && data.data) {
+        out({
+          ok: true, platform: 'meituan',
+          h5Url: data.data.url || '',
+          deepLink: data.data.deep_link || '',
+          h5Link: data.data.h5_link || '',
+          wxAppid: (data.data.wx_app && data.data.wx_app.appid) || '',
+          wxPageUrl: (data.data.wx_app && data.data.wx_app.page_url) || '',
+          miniQrcode: data.data.mini_qrcode || ''
+        });
+      } else {
+        out({ ok: false, error: 'API_ERROR', code: data && data.code, message: (data && data.msg) || '获取美团红包失败' });
+      }
+    }).catch(function (e) { out({ ok: false, error: e.message }); });
+  } else {
+    // 饿了么红包
+    var url2 = endpoint + '/platform/getElemeNew?apkey=' + encodeURIComponent(agg.ecapiKey) + '&eid=' + encodeURIComponent(eid);
+    httpsGetSimple(url2).then(function (resp) {
+      var data = resp.data;
+      if (data && data.code === 200 && data.data) {
+        out({
+          ok: true, platform: 'eleme',
+          h5Url: data.data.url || data.data.h5_url || '',
+          deepLink: data.data.deep_link || '',
+          wxAppid: (data.data.wx_app && data.data.wx_app.appid) || '',
+          wxPageUrl: (data.data.wx_app && data.data.wx_app.page_url) || '',
+          miniQrcode: data.data.mini_qrcode || ''
+        });
+      } else {
+        out({ ok: false, error: 'API_ERROR', code: data && data.code, message: (data && data.msg) || '获取饿了么红包失败' });
+      }
+    }).catch(function (e) { out({ ok: false, error: e.message }); });
+  }
+};
+
+// 简单 HTTP GET（不走 cliguard 签名，用于第三方聚合 API）
+function httpsGetSimple(urlStr) {
+  return new Promise(function (resolve, reject) {
+    var parsed = new URL(urlStr);
+    var options = {
+      hostname: parsed.hostname,
+      port: parsed.port || 80,
+      path: parsed.pathname + parsed.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+      }
+    };
+    var req = require('http').request(options, function (res) {
+      var chunks = [];
+      res.on('data', function (chunk) { chunks.push(chunk); });
+      res.on('end', function () {
+        var body = Buffer.concat(chunks).toString('utf-8');
+        try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
+        catch (_) { resolve({ status: res.statusCode, data: null, raw: body }); }
+      });
+    });
+    req.on('error', function (e) { reject(e); });
+    req.setTimeout(10000, function () { req.destroy(); reject(new Error('TIMEOUT')); });
+    req.end();
+  });
 }
 
 /**

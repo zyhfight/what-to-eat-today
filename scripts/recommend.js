@@ -307,14 +307,94 @@ function buildWaimaiDeeplink(p, lat, lng) {
 
 // ── Main ──
 const args = parseArgs(process.argv);
-const mode = args.mode || 'dinein';   // dinein | waimai
+const mode = args.mode || 'dinein';   // dinein | waimai | redpacket
 const platform = args.platform || 'meituan';  // meituan | eleme
 const isWaimai = (mode === 'waimai');
+const isRedpacket = (mode === 'redpacket');
 const isEleme = (platform === 'eleme');
 const lat = args.lat, lng = args.lng, cityId = args['city-id'], token = args.token;
 const cityCode = args['city-code'] || '330100';
 const budget = parseFloat(args.budget) || 0;
 const maxDeliveryMinutes = parseInt(args['max-delivery-minutes'] || '0', 10);
+
+// ── 红包推荐模式：纯品类引导 + 红包链接，不调搜索 API ──
+if (isRedpacket) {
+  const slot = args['time-slot'] || 'dinner';
+  const cuisine = args.cuisine || '';
+  const taste = args.taste || '';
+
+  // 品类推荐词库
+  const SLOT_CATEGORIES = {
+    breakfast: ['包子粥铺', '豆浆油条', '煎饼果子', '肠粉早点'],
+    lunch: ['快餐便当', '麻辣烫', '盖浇饭', '汉堡炸鸡'],
+    tea: ['奶茶咖啡', '甜品蛋糕', '鲜榨果汁'],
+    dinner: ['家常小炒', '火锅', '烧烤', '日韩料理'],
+    night: ['烧烤夜宵', '炸鸡', '小龙虾', '麻辣烫']
+  };
+
+  // 时段描述
+  const SLOT_EMOJI = { breakfast: '🌅', lunch: '☀️', tea: '🫖', dinner: '🌙', night: '🌃' };
+  const SLOT_NAMES = { breakfast: '早餐', lunch: '午餐', tea: '下午茶', dinner: '晚餐', night: '夜宵' };
+
+  let categories = [];
+  if (cuisine) {
+    categories = cuisine.split(/[,，、]/).map(s => s.trim()).filter(Boolean).slice(0, 3);
+  }
+  if (taste) {
+    if (taste.indexOf('辣') !== -1) categories.push('麻辣香锅');
+    if (taste.indexOf('清淡') !== -1) categories.push('轻食沙拉');
+  }
+  const slotCats = SLOT_CATEGORIES[slot] || SLOT_CATEGORIES.dinner;
+  for (const c of slotCats) {
+    if (!categories.includes(c) && categories.length < 3) categories.push(c);
+  }
+
+  // 获取红包链接
+  const runJs = path.join(__dirname, 'run.js');
+  let meituanRedpacket = null, elemeRedpacket = null;
+
+  function fetchRedpackets() {
+    try {
+      const mt = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
+        { encoding: 'utf-8', timeout: 15000 });
+      if (mt.status === 0 && mt.stdout) {
+        const d = JSON.parse(mt.stdout.trim().split('\n').pop());
+        if (d.ok) meituanRedpacket = d;
+      }
+    } catch (_) {}
+    try {
+      const el = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'eleme'],
+        { encoding: 'utf-8', timeout: 15000 });
+      if (el.status === 0 && el.stdout) {
+        const d = JSON.parse(el.stdout.trim().split('\n').pop());
+        if (d.ok) elemeRedpacket = d;
+      }
+    } catch (_) {}
+  }
+  fetchRedpackets();
+
+  const recommendations = categories.map((cat, i) => ({
+    rank: i + 1,
+    platform: 'redpacket',
+    category: cat,
+    slotName: SLOT_NAMES[slot],
+    slotEmoji: SLOT_EMOJI[slot],
+    meituanH5: meituanRedpacket ? meituanRedpacket.h5Url : '',
+    meituanDeepLink: meituanRedpacket ? meituanRedpacket.deepLink : '',
+    elemeH5: elemeRedpacket ? elemeRedpacket.h5Url : '',
+    elemeDeepLink: elemeRedpacket ? elemeRedpacket.deepLink : ''
+  }));
+
+  out({
+    ok: true, mode: 'redpacket',
+    recommendations: recommendations,
+    meituanRedpacket: meituanRedpacket,
+    elemeRedpacket: elemeRedpacket,
+    meituanError: (!meituanRedpacket) ? (meituanRedpacket || 'AGGREGATE_NOT_CONFIGURED') : null,
+    elemeError: (!elemeRedpacket) ? (elemeRedpacket || 'AGGREGATE_NOT_CONFIGURED') : null
+  });
+  process.exit(0);
+}
 
 // 参数校验
 if (!lat || !lng) {

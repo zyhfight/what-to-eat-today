@@ -11,5 +11,9 @@
     "pid": "",
     "cityCode": "330100",
     "endpoint": "https://eco.taobao.com/router/rest"
+  },
+  "aggregate": {
+    "ecapiKey": "",
+    "endpoint": "http://api.web.ecapi.cn"
   }
 }
