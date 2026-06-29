@@ -9,6 +9,7 @@
     "appKey": "",
     "appSecret": "",
     "pid": "",
+    "tbname": "",
     "cityCode": "330100",
     "endpoint": "https://eco.taobao.com/router/rest"
   },

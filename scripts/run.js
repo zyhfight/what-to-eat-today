@@ -1415,18 +1415,29 @@ commands['aggregate-redpacket'] = function (argv) {
       }
     }).catch(function (e) { out({ ok: false, error: e.message }); });
   } else {
-    // 饿了么红包
-    var url2 = endpoint + '/platform/getElemeNew?apkey=' + encodeURIComponent(agg.ecapiKey) + '&eid=' + encodeURIComponent(eid);
+    // 饿了么红包：通过淘宝客活动转链（需要淘宝客 pid 和 activity_material_id）
+    // 喵有券饿了么接口：/taoke/getTbkActivityInfo
+    var tbname = args.tbname || '';
+    var pid = args.pid || '';
+    var activityId = args['activity-id'] || '1583739244161';
+    if (!tbname || !pid) {
+      out({ ok: false, error: 'ELEME_NEEDS_TB', message: '饿了么红包需要淘宝客授权，请在 config.json 的 eleme 中配置 tbname 和 pid，或仅使用美团红包' });
+      return;
+    }
+    var url2 = endpoint + '/taoke/getTbkActivityInfo?apkey=' + encodeURIComponent(agg.ecapiKey)
+      + '&tbname=' + encodeURIComponent(tbname)
+      + '&pid=' + encodeURIComponent(pid)
+      + '&activity_material_id=' + encodeURIComponent(activityId)
+      + '&relation_id=' + encodeURIComponent(eid);
     httpsGetSimple(url2).then(function (resp) {
       var data = resp.data;
       if (data && data.code === 200 && data.data) {
         out({
           ok: true, platform: 'eleme',
-          h5Url: data.data.url || data.data.h5_url || '',
-          deepLink: data.data.deep_link || '',
-          wxAppid: (data.data.wx_app && data.data.wx_app.appid) || '',
-          wxPageUrl: (data.data.wx_app && data.data.wx_app.page_url) || '',
-          miniQrcode: data.data.mini_qrcode || ''
+          h5Url: data.data.click_url || '',
+          wxQrcodeUrl: data.data.wx_qrcode_url || '',
+          wxMiniPath: data.data.wx_miniprogram_path || '',
+          shortUrl: data.data.short_click_url || ''
         });
       } else {
         out({ ok: false, error: 'API_ERROR', code: data && data.code, message: (data && data.msg) || '获取饿了么红包失败' });
