@@ -442,9 +442,41 @@ for (const kw of keywords) {
   }
 }
 
-// 外卖配置错误，直接返回
-if (waimaiConfigError) {
-  out({ ok: false, mode, error: waimaiConfigError.error, message: waimaiConfigError.message, keywords });
+// 外卖搜索配置错误，自动降级到到店搜索外卖品类（复用 searchProductByAgent）
+if (waimaiConfigError && isWaimai && token && cityId) {
+  // 降级：用 dinein 搜索接口搜外卖品类关键词
+  const allDinein = [];
+  const seen2 = new Set();
+  for (const kw of keywords) {
+    const products = searchProducts(kw, lat, lng, cityId, token);
+    if (Array.isArray(products)) {
+      for (const p of products) {
+        const key = p.productId;
+        if (key && !seen2.has(key)) { seen2.add(key); allDinein.push(p); }
+      }
+    }
+  }
+  if (allDinein.length > 0) {
+    const scored2 = allDinein.map(p => ({ ...p, score: calculateScore(p, budget) }));
+    const dedupMap2 = new Map();
+    for (const p of scored2) {
+      if (!dedupMap2.has(p.poiId) || dedupMap2.get(p.poiId).score < p.score) dedupMap2.set(p.poiId, p);
+    }
+    const top3d = Array.from(dedupMap2.values()).sort((a,b) => b.score - a.score).slice(0, 3)
+      .map((p, i) => {
+        const links = buildDeeplink(p.productId, p.poiId);
+        return {
+          rank: i + 1, platform: 'meituan-dinein-fallback', score: Math.round(p.score * 100) / 100,
+          productId: p.productId, poiId: p.poiId, poiName: p.poiName, productName: p.productName,
+          salePrice: p.salePrice, distanceText: p.distanceText, poiDpFiveScore: p.poiDpFiveScore,
+          imageUrl: p.imageUrl, h5Url: links.h5Url, deeplink: links.deeplink,
+          reasons: generateReasons(p, budget), fallback: true, fallbackReason: waimaiConfigError.error
+        };
+      });
+    out({ ok: true, mode, recommendations: top3d, keywords, totalSearched: allDinein.length, fallback: true, fallbackReason: waimaiConfigError.error });
+  } else {
+    out({ ok: false, mode, error: waimaiConfigError.error, message: waimaiConfigError.message, keywords });
+  }
   process.exit(0);
 }
 
