@@ -259,8 +259,9 @@ function generateWaimaiReasons(p, budget) {
 }
 
 // ── 到店 deeplink ──
+// cdb.meituan.com 在桌面浏览器显示空白引导页，改用 i.meituan.com 中转
 function buildDeeplink(productId, poiId) {
-  const h5Url = `https://cdb.meituan.com/pages/deal/detail?productId=${productId}`;
+  const h5Url = `https://i.meituan.com/c/deal/${productId}.html`;
   const deeplink = `imeituan://www.meituan.com/web?url=${encodeURIComponent(h5Url)}`;
   return { h5Url, deeplink, displayUrl: h5Url };
 }
