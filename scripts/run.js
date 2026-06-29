@@ -22,7 +22,7 @@
  *   search-eleme [--city-code 330100] [--keyword <kw>] [--max-price N] [--page N] [--page-size N]
  *                                从缓存中搜索饿了么推广商品
  *   eleme-detail --item-id <id>                 获取饿了么单品推广详情（含推广链接）
- *   aggregate-redpacket --platform meituan|eleme  通过喵有券获取外卖红包链接
+ *   aggregate-redpacket --platform meituan|eleme|veapi-eleme  通过聚合平台获取外卖红包链接
  *   location                      获取用户近期位置
  *   location-by-address --address <addr>  根据地址获取经纬度
  *   order --product-id <pid> --poi-id <pid> --city-id <id> --uuid <u> [--lat <lat>] [--lng <lng>] [--quantity N]
@@ -1375,8 +1375,8 @@ function normalizeElemeItem(item) {
 commands['aggregate-redpacket'] = function (argv) {
   var { args } = parseArgs(argv || []);
   var platform = args.platform || 'meituan';
-  if (platform !== 'meituan' && platform !== 'eleme') {
-    out({ ok: false, error: 'INVALID_PLATFORM', message: 'platform 必须为 meituan 或 eleme' });
+  if (platform !== 'meituan' && platform !== 'eleme' && platform !== 'veapi-eleme') {
+    out({ ok: false, error: 'INVALID_PLATFORM', message: 'platform 必须为 meituan / eleme / veapi-eleme' });
     return;
   }
 
@@ -1414,7 +1414,7 @@ commands['aggregate-redpacket'] = function (argv) {
         out({ ok: false, error: 'API_ERROR', code: data && data.code, message: (data && data.msg) || '获取美团红包失败' });
       }
     }).catch(function (e) { out({ ok: false, error: e.message }); });
-  } else {
+  } else if (platform === 'eleme') {
     // 饿了么红包：通过淘宝客活动转链（需要淘宝客 pid 和 activity_material_id）
     // 喵有券饿了么接口：/taoke/getTbkActivityInfo
     var tbname = args.tbname || '';
@@ -1441,6 +1441,40 @@ commands['aggregate-redpacket'] = function (argv) {
         });
       } else {
         out({ ok: false, error: 'API_ERROR', code: data && data.code, message: (data && data.msg) || '获取饿了么红包失败' });
+      }
+    }).catch(function (e) { out({ ok: false, error: e.message }); });
+  } else if (platform === 'veapi-eleme') {
+    // 维易饿了么红包转链（veapi.cn）
+    var veapiKey = agg.veapiKey || '';
+    if (!veapiKey) {
+      out({ ok: false, error: 'VEAPI_NOT_CONFIGURED', message: '未配置维易 veapiKey，请在 config.json 的 aggregate.veapiKey 中填写' });
+      return;
+    }
+    var activityId = args['activity-id'] || '10144';
+    var sid = args.eid || 'common';
+    var url3 = 'http://api.veapi.cn/waimai/ele_actproms?vekey=' + encodeURIComponent(veapiKey)
+      + '&activity_id=' + encodeURIComponent(activityId)
+      + '&sid=' + encodeURIComponent(sid);
+    httpsGetSimple(url3).then(function (resp) {
+      var data = resp.data;
+      if (data && data.error === '0' && data.data) {
+        var link = data.data.link || {};
+        out({
+          ok: true, platform: 'veapi-eleme',
+          title: data.data.title || '饿了么天天领红包',
+          description: data.data.description || '',
+          picture: data.data.picture || '',
+          h5Url: link.h5_url || link.h5_short_link || '',
+          h5ShortLink: link.h5_short_link || '',
+          wxAppid: link.wx_appid || '',
+          wxPath: link.wx_path || '',
+          alipayMiniUrl: link.alipay_mini_url || '',
+          eleSchemeUrl: link.ele_scheme_url || '',
+          miniQrcode: link.mini_qrcode || '',
+          tbQrCode: link.tb_qr_code || ''
+        });
+      } else {
+        out({ ok: false, error: 'API_ERROR', code: data && data.error, message: (data && data.msg) || '获取维易饿了么红包失败' });
       }
     }).catch(function (e) { out({ ok: false, error: e.message }); });
   }

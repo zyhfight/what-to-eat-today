@@ -472,8 +472,9 @@ if (waimaiConfigError && isWaimai && token && cityId) {
         };
       });
 
-    // 异步获取美团红包（不影响推荐速度，失败静默）
+    // 异步获取红包（美团+饿了么，失败静默）
     var redpacketResult = null;
+    var elemeRedpacketResult = null;
     try {
       var rp = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
         { encoding: 'utf-8', timeout: 10000 });
@@ -482,11 +483,20 @@ if (waimaiConfigError && isWaimai && token && cityId) {
         if (rpd.ok) redpacketResult = { h5Url: rpd.h5Url, deepLink: rpd.deepLink, wxAppid: rpd.wxAppid, wxPageUrl: rpd.wxPageUrl };
       }
     } catch (_) {}
+    try {
+      var rp2 = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'veapi-eleme'],
+        { encoding: 'utf-8', timeout: 10000 });
+      if (rp2.status === 0 && rp2.stdout) {
+        var rpd2 = JSON.parse(rp2.stdout.trim().split('\n').pop());
+        if (rpd2.ok) elemeRedpacketResult = { title: rpd2.title, h5Url: rpd2.h5Url, wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath, eleSchemeUrl: rpd2.eleSchemeUrl };
+      }
+    } catch (_) {}
 
     out({
       ok: true, mode, recommendations: top3d, keywords, totalSearched: allDinein.length,
       fallback: true, fallbackReason: waimaiConfigError.error,
-      redpacket: redpacketResult
+      redpacket: redpacketResult,
+      elemeRedpacket: elemeRedpacketResult
     });
   } else {
     out({ ok: false, mode, error: waimaiConfigError.error, message: waimaiConfigError.message, keywords });
@@ -584,9 +594,11 @@ const top3 = Array.from(dedupMap.values())
     return result;
   });
 
-// 外卖模式或降级模式：异步获取美团红包（失败静默）
+// 外卖模式或降级模式：异步获取红包（美团 + 饿了么，失败静默）
 var redpacketInfo = null;
+var elemeRedpacket = null;
 if (isWaimai || isRedpacket) {
+  // 美团红包（喵有券）
   try {
     var rp = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
       { encoding: 'utf-8', timeout: 10000 });
@@ -595,6 +607,15 @@ if (isWaimai || isRedpacket) {
       if (rpd.ok) redpacketInfo = { h5Url: rpd.h5Url, deepLink: rpd.deepLink, wxAppid: rpd.wxAppid, wxPageUrl: rpd.wxPageUrl };
     }
   } catch (_) {}
+  // 饿了么红包（维易 veapi.cn）
+  try {
+    var rp2 = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'veapi-eleme'],
+      { encoding: 'utf-8', timeout: 10000 });
+    if (rp2.status === 0 && rp2.stdout) {
+      var rpd2 = JSON.parse(rp2.stdout.trim().split('\n').pop());
+      if (rpd2.ok) elemeRedpacket = { title: rpd2.title, h5Url: rpd2.h5Url, wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath, eleSchemeUrl: rpd2.eleSchemeUrl };
+    }
+  } catch (_) {}
 }
 
-out({ ok: true, mode, recommendations: top3, keywords, totalSearched: allProducts.length, redpacket: redpacketInfo });
+out({ ok: true, mode, recommendations: top3, keywords, totalSearched: allProducts.length, redpacket: redpacketInfo, elemeRedpacket: elemeRedpacket });

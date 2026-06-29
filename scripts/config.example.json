@@ -14,6 +14,7 @@
   },
   "aggregate": {
     "ecapiKey": "YOUR_ECAPI_KEY",
+    "veapiKey": "YOUR_VEAPI_KEY",
     "endpoint": "http://api.web.ecapi.cn"
   }
 }
