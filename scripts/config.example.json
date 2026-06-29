@@ -1,8 +1,15 @@
 {
   "aiScene": "a0d4da77f918ab204d86c911fcdd0ce1",
   "cpsOpen": {
-    "appKey": "YOUR_APP_KEY",
-    "appSecret": "YOUR_APP_SECRET",
+    "appKey": "",
+    "appSecret": "",
     "endpoint": "https://media.meituan.com/cps_open/common/api/v1/query_coupon"
+  },
+  "eleme": {
+    "appKey": "YOUR_TOP_APP_KEY",
+    "appSecret": "YOUR_TOP_APP_SECRET",
+    "pid": "alsc_YOUR_PID",
+    "cityCode": "330100",
+    "endpoint": "https://eco.taobao.com/router/rest"
   }
 }

@@ -372,6 +372,56 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 > 🔍 搜索了 {关键词数量} 个外卖品类（{关键词列表}），共 {总数} 个商品，综合配送费/时长/销量/评分排序。
 ```
 
+### 饿了么外卖展示格式（platform=eleme 时使用）
+
+饿了么返回推广商品（无配送信息），展示折扣/佣金/销量：
+
+```
+🥇 **推荐一：{itemName}**
+
+💰 ¥{sellPrice}　~~¥{originalPrice}~~　🔥 {discount}折　🎁 预估返 ¥{commission}
+
+📊 已售 {totalSales}　🏪 {applyShopCount} 家门店通用
+
+💡 {reason1} · {reason2}
+
+![|134]({imageUrl})
+
+> 🛒 饿了么推广商品，[点此查看]({h5Url})
+
+---
+
+🥈 **推荐二：{itemName}**
+
+💰 ¥{sellPrice}　~~¥{originalPrice}~~　🔥 {discount}折　🎁 预估返 ¥{commission}
+
+📊 已售 {totalSales}　🏪 {applyShopCount} 家门店通用
+
+💡 {reason1} · {reason2}
+
+![|134]({imageUrl})
+
+> 🛒 饿了么推广商品，[点此查看]({h5Url})
+
+---
+
+🥉 **推荐三：{itemName}**
+
+💰 ¥{sellPrice}　~~¥{originalPrice}~~　🔥 {discount}折　🎁 预估返 ¥{commission}
+
+📊 已售 {totalSales}　🏪 {applyShopCount} 家门店通用
+
+💡 {reason1} · {reason2}
+
+![|134]({imageUrl})
+
+> 🛒 饿了么推广商品，[点此查看]({h5Url})
+
+---
+
+> 🔍 搜索了 {关键词数量} 个品类（{关键词列表}），共 {总数} 个推广商品，综合佣金/销量/折扣/价格排序。
+```
+
 ### 选品交互
 
 #### 到店模式

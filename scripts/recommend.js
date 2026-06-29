@@ -153,6 +153,31 @@ function searchWaimaiProducts(keyword, lat, lng) {
   return [];
 }
 
+// ── 饿了么搜索：通过 spawnSync 调用 run.js search-eleme ──
+function searchElemeProducts(keyword, maxPrice, cityCode) {
+  const runJs = path.join(__dirname, 'run.js');
+  const cmdArgs = [runJs, 'search-eleme', '--city-code', cityCode];
+  if (keyword) cmdArgs.push('--keyword', keyword);
+  if (maxPrice > 0) cmdArgs.push('--max-price', String(maxPrice));
+  cmdArgs.push('--page', '1', '--page-size', '20');
+
+  const result = spawnSync('node', cmdArgs, { encoding: 'utf-8', timeout: 15000 });
+  if (result.status !== 0 || !result.stdout) return [];
+  try {
+    const data = JSON.parse(result.stdout.trim().split('\n').pop());
+    if (data.error === 'ELEME_NOT_CONFIGURED') {
+      return { __error: 'ELEME_NOT_CONFIGURED', __message: data.message };
+    }
+    if (data.error === 'CACHE_MISS') {
+      return { __error: 'CACHE_MISS', __message: data.message };
+    }
+    if (data.ok && data.productList) {
+      return data.productList;
+    }
+  } catch (_) {}
+  return [];
+}
+
 // ── 到店评分 ──
 function parseDistanceKm(text) {
   if (!text) return 999;
@@ -240,6 +265,39 @@ function buildDeeplink(productId, poiId) {
   return { h5Url, deeplink, displayUrl: h5Url };
 }
 
+// ── 饿了么评分算法 ──
+// score = 0.35*(commission/sellPrice) + 0.25*log10(sales+1)/4 + 0.25*budget_match + 0.15*(1-discount)
+function calculateElemeScore(p, budget) {
+  const commRatio = Math.min((p.commission || 0) / Math.max((p.sellPrice || 1), 1), 0.3) / 0.3;
+  const salesNum = parseFloat(p.totalSales) || 0;
+  const salesScore = Math.min(1, Math.log10(salesNum + 1) / 4);
+  const bgt = matchBudget(p.sellPrice || 0, budget);
+  const discountPower = Math.min(1, (1 - (p.discount || 0)) / 0.7);
+  return commRatio * 0.35 + salesScore * 0.25 + bgt * 0.25 + discountPower * 0.15;
+}
+
+// ── 饿了么推荐理由 ──
+function generateElemeReasons(p, budget) {
+  const r = [];
+  if ((p.commission || 0) > 3) r.push(`预估返 ¥${p.commission.toFixed(1)}，高佣好单`);
+  if ((p.totalSales || '0') !== '0') r.push(`已售 ${p.totalSales}，热销爆款`);
+  if ((p.discount || 0) > 0 && (p.discount || 0) < 0.7) r.push(`${Math.round((1-p.discount)*100)}% 折扣，超值`);
+  if ((p.applyShopCount || 0) >= 20) r.push(`${p.applyShopCount} 家门店通用`);
+  const price = p.sellPrice || 0;
+  if (budget > 0 && price <= budget) r.push(`¥${price}，在预算内`);
+  else if (price > 0 && price <= 30) r.push(`¥${price}，价格实惠`);
+  if (r.length === 0) r.push('饿了么热销推荐');
+  return r.slice(0, 2);
+}
+
+// ── 饿了么 deeplink ──
+function buildElemeDeeplink(p) {
+  const h5Url = p.alipayScheme
+    ? p.alipayScheme
+    : `https://h5.ele.me/alsc-item-detail/?itemId=${p.itemId}`;
+  return { h5Url, deeplink: h5Url, displayUrl: h5Url };
+}
+
 // ── 外卖 deeplink ──
 function buildWaimaiDeeplink(p, lat, lng) {
   const h5Url = p.deeplink || `https://h5.waimai.meituan.com/waimai/mindex/home?lat=${lat}&lng=${lng}`;
@@ -250,12 +308,15 @@ function buildWaimaiDeeplink(p, lat, lng) {
 // ── Main ──
 const args = parseArgs(process.argv);
 const mode = args.mode || 'dinein';   // dinein | waimai
+const platform = args.platform || 'meituan';  // meituan | eleme
 const isWaimai = (mode === 'waimai');
+const isEleme = (platform === 'eleme');
 const lat = args.lat, lng = args.lng, cityId = args['city-id'], token = args.token;
+const cityCode = args['city-code'] || '330100';
 const budget = parseFloat(args.budget) || 0;
 const maxDeliveryMinutes = parseInt(args['max-delivery-minutes'] || '0', 10);
 
-// 参数校验：外卖模式不需要 token（联盟 API 用 AppKey 认证）
+// 参数校验
 if (!lat || !lng) {
   out({ ok: false, error: 'MISSING_PARAMS', message: '缺少 lat/lng 参数' });
   process.exit(1);
@@ -272,19 +333,27 @@ let waimaiConfigError = null;
 
 for (const kw of keywords) {
   let products;
-  if (isWaimai) {
+  if (isWaimai && isEleme) {
+    // 饿了么：从缓存商品池中按关键词筛选
+    products = searchElemeProducts(kw, 0, cityCode);
+    if (products && products.__error) {
+      waimaiConfigError = { error: products.__error, message: products.__message };
+      break;
+    }
+  } else if (isWaimai) {
+    // 美团外卖
     products = searchWaimaiProducts(kw, lat, lng);
-    // 检查是否返回了配置错误
     if (products && products.__error) {
       waimaiConfigError = { error: products.__error, message: products.__message };
       break;
     }
   } else {
+    // 到店
     products = searchProducts(kw, lat, lng, cityId, token);
   }
   if (Array.isArray(products)) {
     for (const p of products) {
-      const key = p.productId;
+      const key = isEleme ? p.itemId : p.productId;
       if (key && !seen.has(key)) {
         seen.add(key);
         allProducts.push(p);
@@ -306,38 +375,66 @@ if (allProducts.length === 0) {
 
 const scored = allProducts.map(p => ({
   ...p,
-  score: isWaimai
-    ? calculateWaimaiScore(p, budget, maxDeliveryMinutes)
-    : calculateScore(p, budget)
+  score: isEleme
+    ? calculateElemeScore(p, budget)
+    : (isWaimai
+      ? calculateWaimaiScore(p, budget, maxDeliveryMinutes)
+      : calculateScore(p, budget))
 }));
 
-// 同 poiId 去重 → 保留最高分
-const poiMap = new Map();
+// 去重 → 保留最高分（饿了么用 itemId，其他用 poiId）
+const dedupMap = new Map();
 for (const p of scored) {
-  const key = p.poiId;
-  if (!poiMap.has(key) || poiMap.get(key).score < p.score) poiMap.set(key, p);
+  const key = isEleme ? p.itemId : p.poiId;
+  if (!dedupMap.has(key) || dedupMap.get(key).score < p.score) dedupMap.set(key, p);
 }
 
-const top3 = Array.from(poiMap.values())
+const top3 = Array.from(dedupMap.values())
   .sort((a, b) => b.score - a.score)
   .slice(0, 3)
   .map((p, i) => {
-    const links = isWaimai
-      ? buildWaimaiDeeplink(p, lat, lng)
-      : buildDeeplink(p.productId, p.poiId);
+    let links;
+    if (isEleme) {
+      links = buildElemeDeeplink(p);
+    } else if (isWaimai) {
+      links = buildWaimaiDeeplink(p, lat, lng);
+    } else {
+      links = buildDeeplink(p.productId, p.poiId);
+    }
     const result = {
       rank: i + 1,
-      productId: p.productId,
-      poiId: p.poiId,
-      poiName: p.poiName,
-      productName: p.productName,
+      platform: isEleme ? 'eleme' : (isWaimai ? 'meituan-waimai' : 'meituan-dinein'),
       score: Math.round(p.score * 100) / 100,
-      reasons: isWaimai ? generateWaimaiReasons(p, budget) : generateReasons(p, budget),
       h5Url: links.h5Url,
       deeplink: links.deeplink
     };
-    // 根据模式附加不同字段
-    if (isWaimai) {
+    if (isEleme) {
+      result.reasons = generateElemeReasons(p, budget);
+      Object.assign(result, {
+        productId: p.itemId,           // 兼容字段
+        poiId: p.itemId,
+        productName: p.itemName,
+        poiName: p.itemName.split('|')[0] || p.itemName,
+        brandName: '',
+        itemId: p.itemId,
+        itemName: p.itemName,
+        sellPrice: p.sellPrice,
+        originalPrice: p.originalPrice,
+        discount: p.discount,
+        commission: p.commission,
+        commissionRate: p.commissionRate,
+        totalSales: p.totalSales,
+        applyShopCount: p.applyShopCount,
+        applyCityCount: p.applyCityCount,
+        imageUrl: p.imageUrl,
+        ticketPrice: p.ticketPrice,
+        ticketThreshold: p.ticketThreshold,
+        wxAppid: p.wxAppid,
+        wxPath: p.wxPath,
+        alipayScheme: p.alipayScheme
+      });
+    } else if (isWaimai) {
+      result.reasons = generateWaimaiReasons(p, budget);
       Object.assign(result, {
         brandName: p.brandName || '',
         sellPrice: p.sellPrice || '0',

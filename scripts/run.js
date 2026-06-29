@@ -18,6 +18,10 @@
  *   search --keyword <kw> --lat <lat> --lng <lng> --city-id <id> [--page N] [--page-size N] [--query-id Q] [--request-id R] [--max-distance-km D]
  *   search-waimai --keyword <kw> --lat <lat> --lng <lng> [--page N] [--page-size N] [--sort-field 1|2|6] [--search-id <id>]
  *                                外卖商品搜索（美团联盟 query_coupon 接口，需配置 AppKey）
+ *   eleme-cache [--city-code 330100] [--force]  拉取并缓存城市饿了么推广商品池
+ *   search-eleme [--city-code 330100] [--keyword <kw>] [--max-price N] [--page N] [--page-size N]
+ *                                从缓存中搜索饿了么推广商品
+ *   eleme-detail --item-id <id>                 获取饿了么单品推广详情（含推广链接）
  *   location                      获取用户近期位置
  *   location-by-address --address <addr>  根据地址获取经纬度
  *   order --product-id <pid> --poi-id <pid> --city-id <id> --uuid <u> [--lat <lat>] [--lng <lng>] [--quantity N]
@@ -472,6 +476,80 @@ function cpsOpenPost(urlStr, bodyStr, headers) {
         'Content-Length': bodyBuf.length,
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
       }, headers || {})
+    };
+    var req = https.request(options, function (res) {
+      var chunks = [];
+      res.on('data', function (chunk) { chunks.push(chunk); });
+      res.on('end', function () {
+        var body = Buffer.concat(chunks).toString('utf-8');
+        try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
+        catch (_) { resolve({ status: res.statusCode, data: null, raw: body }); }
+      });
+    });
+    req.on('error', function (e) { reject(e); });
+    req.setTimeout(15000, function () { req.destroy(); reject(new Error('TIMEOUT')); });
+    req.write(bodyBuf);
+    req.end();
+  });
+}
+
+// ── 淘宝开放平台 (TOP) 签名 ──────────────────────────────────
+// 签名算法：
+//   1. 所有参数放入 TreeMap 按 key 字典序排序
+//   2. 拼接：key1value1key2value2...（无分隔符）
+//   3. sign = MD5(secret + 拼接串 + secret).toUpperCase()
+//   4. 公共参数：method, app_key, timestamp, v=2.0, sign_method=md5, format=json
+function signTopRequest(appKey, appSecret, params) {
+  var allParams = {};
+  // 公共参数
+  allParams.method = params.method;
+  allParams.app_key = appKey;
+  allParams.timestamp = (new Date()).toISOString().replace(/\.\d{3}Z$/, '+08:00').replace('T', ' ').replace('+08:00', '');
+  allParams.v = '2.0';
+  allParams.sign_method = 'md5';
+  allParams.format = 'json';
+  // 合并业务参数（排除 method 重复）
+  for (var k in params) {
+    if (k !== 'method') allParams[k] = params[k];
+  }
+  // 排序
+  var sortedKeys = Object.keys(allParams).sort();
+  var signStr = appSecret;
+  for (var i = 0; i < sortedKeys.length; i++) {
+    var k = sortedKeys[i];
+    var v = allParams[k];
+    if (v !== undefined && v !== null && v !== '') {
+      signStr += k + String(v);
+    }
+  }
+  signStr += appSecret;
+  var sign = crypto.createHash('md5').update(signStr, 'utf-8').digest('hex').toUpperCase();
+  allParams.sign = sign;
+  return allParams;
+}
+
+// TOP API 调用（标准 POST form-urlencoded）
+function topPost(endpoint, params) {
+  return new Promise(function (resolve, reject) {
+    var postData = [];
+    for (var k in params) {
+      if (params[k] !== undefined && params[k] !== null) {
+        postData.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k])));
+      }
+    }
+    var bodyStr = postData.join('&');
+    var bodyBuf = Buffer.from(bodyStr, 'utf-8');
+    var parsed = new URL(endpoint);
+    var options = {
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': bodyBuf.length,
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+      }
     };
     var req = https.request(options, function (res) {
       var chunks = [];
@@ -1035,6 +1113,255 @@ function normalizeWaimaiItem(item) {
     saleVolume: saleVolume,
     saleVolumeText: coupon.saleVolume || '',
     deeplink: coupon.deeplink || ''
+  };
+}
+
+/**
+ * eleme-cache — 拉取并缓存城市饿了么推广商品池
+ * 用法: node run.js eleme-cache [--city-code 330100] [--force]
+ */
+commands['eleme-cache'] = function (argv) {
+  var { args } = parseArgs(argv || []);
+
+  var config;
+  try {
+    config = JSON.parse(fs.readFileSync(path.join(SCRIPTS_DIR, 'config.json'), 'utf-8'));
+  } catch (e) {
+    out({ ok: false, error: 'CONFIG_READ_FAILED', message: '读取 config.json 失败' });
+    return;
+  }
+  var eleme = config.eleme || {};
+  if (!eleme.appKey || !eleme.appSecret || !eleme.pid) {
+    out({ ok: false, error: 'ELEME_NOT_CONFIGURED', message: '未配置饿了么联盟 AppKey/AppSecret/PID' });
+    return;
+  }
+
+  var cityCode = args['city-code'] || eleme.cityCode || '330100';
+  var cacheDir = path.join(AUTH_DIR, 'eleme-products');
+  var cacheFile = path.join(cacheDir, cityCode + '.json');
+  var forceRefresh = args['force'] === 'true' || args['force'] === '1';
+
+  // 检查缓存（1小时内不刷新）
+  if (!forceRefresh) {
+    try {
+      var stat = fs.statSync(cacheFile);
+      if (Date.now() - stat.mtimeMs < 3600000) {
+        var cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+        out({ ok: true, cached: true, count: cached.length, cacheFile: cacheFile, cityCode: cityCode });
+        return;
+      }
+    } catch (_) {}
+  }
+
+  // 拉取商品池（分页）
+  var allItems = [];
+  var sessionId = '';
+  var pageNumber = 1;
+  var maxPages = 10; // 最多拉10页（200条）
+
+  function fetchPage() {
+    var params = signTopRequest(eleme.appKey, eleme.appSecret, {
+      method: 'alibaba.alsc.union.eleme.promotion.itempromotion.query',
+      query_request: JSON.stringify({
+        biz_type: 'union_item',
+        pid: eleme.pid,
+        city_code: cityCode,
+        page_number: pageNumber,
+        page_size: 20,
+        session_id: sessionId || undefined
+      })
+    });
+
+    return topPost(eleme.endpoint || 'https://eco.taobao.com/router/rest', params);
+  }
+
+  function fetchAll() {
+    return fetchPage().then(function (resp) {
+      var data = resp.data;
+      var responseKey = 'alibaba_alsc_union_eleme_promotion_itempromotion_query_response';
+      var result = (data && data[responseKey]) || data || {};
+      if (result.result_code !== '0' && result.result_code !== 0) {
+        out({ ok: false, error: 'TOP_API_ERROR', code: result.result_code, message: result.error_message || result.message || '接口调用失败' });
+        return;
+      }
+      var pageData = result.data || {};
+      var records = pageData.records || [];
+      sessionId = pageData.session_id || '';
+
+      for (var i = 0; i < records.length; i++) {
+        allItems.push(normalizeElemeItem(records[i]));
+      }
+
+      pageNumber++;
+      if (records.length >= 20 && pageNumber <= maxPages) {
+        return fetchAll();
+      }
+    });
+  }
+
+  fetchAll().then(function () {
+    // 写入缓存
+    try { fs.mkdirSync(cacheDir, { recursive: true }); } catch (_) {}
+    fs.writeFileSync(cacheFile, JSON.stringify(allItems), 'utf-8');
+    out({ ok: true, cached: false, count: allItems.length, cacheFile: cacheFile, cityCode: cityCode });
+  }).catch(function (e) {
+    out({ ok: false, error: e.message });
+  });
+};
+
+/**
+ * search-eleme — 从缓存中搜索饿了么推广商品
+ * 用法: node run.js search-eleme --city-code 330100 [--keyword 火锅] [--max-price 50]
+ */
+commands['search-eleme'] = function (argv) {
+  var { args } = parseArgs(argv || []);
+
+  var config;
+  try {
+    config = JSON.parse(fs.readFileSync(path.join(SCRIPTS_DIR, 'config.json'), 'utf-8'));
+  } catch (e) {
+    out({ ok: false, error: 'CONFIG_READ_FAILED' });
+    return;
+  }
+  var eleme = config.eleme || {};
+  if (!eleme.appKey || !eleme.appSecret || !eleme.pid) {
+    out({ ok: false, error: 'ELEME_NOT_CONFIGURED', message: '未配置饿了么联盟 AppKey/AppSecret/PID' });
+    return;
+  }
+
+  var cityCode = args['city-code'] || eleme.cityCode || '330100';
+  var cacheFile = path.join(AUTH_DIR, 'eleme-products', cityCode + '.json');
+  var keyword = (args.keyword || '').toLowerCase();
+  var maxPrice = parseFloat(args['max-price']) || 0;
+  var page = parseInt(args.page || '1', 10);
+  var pageSize = parseInt(args['page-size'] || '10', 10);
+
+  // 读取缓存
+  var allItems;
+  try {
+    allItems = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+  } catch (e) {
+    out({ ok: false, error: 'CACHE_MISS', message: '缓存不存在，请先执行 eleme-cache 拉取商品池' });
+    return;
+  }
+
+  // 筛选
+  var filtered = allItems;
+  if (keyword) {
+    filtered = allItems.filter(function (item) {
+      return (item.itemName || '').toLowerCase().indexOf(keyword) !== -1;
+    });
+  }
+  if (maxPrice > 0) {
+    filtered = filtered.filter(function (item) {
+      return (item.sellPrice || 0) <= maxPrice;
+    });
+  }
+
+  // 分页
+  var start = (page - 1) * pageSize;
+  var paged = filtered.slice(start, start + pageSize);
+  paged.forEach(function (item, idx) { item.index = start + idx + 1; });
+
+  out({
+    ok: true, success: true,
+    productList: paged,
+    total: filtered.length,
+    poolTotal: allItems.length,
+    page: page, pageSize: pageSize
+  });
+};
+
+/**
+ * eleme-detail — 获取饿了么单品推广详情（含推广链接）
+ * 用法: node run.js eleme-detail --item-id <id>
+ */
+commands['eleme-detail'] = function (argv) {
+  var { args } = parseArgs(argv || []);
+  if (!args['item-id']) fail('MISSING_PARAM', { param: 'item-id' });
+
+  var config;
+  try {
+    config = JSON.parse(fs.readFileSync(path.join(SCRIPTS_DIR, 'config.json'), 'utf-8'));
+  } catch (e) {
+    out({ ok: false, error: 'CONFIG_READ_FAILED' });
+    return;
+  }
+  var eleme = config.eleme || {};
+  if (!eleme.appKey || !eleme.appSecret || !eleme.pid) {
+    out({ ok: false, error: 'ELEME_NOT_CONFIGURED' });
+    return;
+  }
+
+  var params = signTopRequest(eleme.appKey, eleme.appSecret, {
+    method: 'alibaba.alsc.union.eleme.promotion.retail.itempromotion.get',
+    query_request: JSON.stringify({
+      pid: eleme.pid,
+      item_id: args['item-id'],
+      include_wx_img: true
+    })
+  });
+
+  topPost(eleme.endpoint || 'https://eco.taobao.com/router/rest', params).then(function (resp) {
+    var data = resp.data;
+    var responseKey = 'alibaba_alsc_union_eleme_promotion_retail_itempromotion_get_response';
+    var result = (data && data[responseKey]) || data || {};
+    if (result.result_code !== '0' && result.result_code !== 0) {
+      out({ ok: false, error: 'TOP_API_ERROR', code: result.result_code, message: result.error_message || '获取详情失败' });
+      return;
+    }
+    var detail = result.data || {};
+    var link = detail.link || {};
+    out({
+      ok: true,
+      itemId: detail.item_id,
+      itemName: detail.item_name,
+      picture: detail.picture,
+      sellPriceCent: detail.sell_price_cent,
+      commissionRate: detail.commission_rate,
+      commission: detail.commission,
+      wxAppid: link.wx_appid,
+      wxPath: link.wx_path,
+      wxMiniQrcode: link.wx_mini_qrcode,
+      wxPicture: link.wx_picture
+    });
+  }).catch(function (e) {
+    out({ ok: false, error: e.message });
+  });
+};
+
+/**
+ * 标准化饿了么商品对象
+ */
+function normalizeElemeItem(item) {
+  var sellPrice = (item.sell_price_cent || 0) / 100;
+  var originalPrice = (item.original_price_cent || 0) / 100;
+  var commission = (item.commission || 0) / 100;
+  var discount = parseFloat(item.discount) || 0;
+  var ticket = item.ticket || {};
+  var link = item.link || {};
+
+  return {
+    platform: 'eleme',
+    itemId: String(item.item_id || ''),
+    itemName: item.item_name || '',
+    sellPrice: sellPrice,
+    originalPrice: originalPrice,
+    discount: discount,
+    commission: commission,
+    commissionRate: parseFloat(item.commission_rate) || 0,
+    totalSales: item.total_sales || '0',
+    applyShopCount: item.apply_shop_count || 0,
+    applyCityCount: item.apply_city_count || 0,
+    imageUrl: (item.picture || '').replace(/_\d+x\d+/, ''),
+    bizType: item.biz_type || '',
+    itemType: item.item_type || 0,
+    ticketPrice: (ticket.price || 0) / 100,
+    ticketQuantity: ticket.quantity || 0,
+    ticketThreshold: (ticket.threshold || 0) / 100,
+    wxAppid: link.wx_appid || '',
+    wxPath: link.wx_path || '',
+    alipayScheme: link.alipay_scheme_url || ''
   };
 }
 
