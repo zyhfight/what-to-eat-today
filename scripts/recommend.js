@@ -488,7 +488,12 @@ if (waimaiConfigError && isWaimai && token && cityId) {
         { encoding: 'utf-8', timeout: 10000 });
       if (rp2.status === 0 && rp2.stdout) {
         var rpd2 = JSON.parse(rp2.stdout.trim().split('\n').pop());
-        if (rpd2.ok) elemeRedpacketResult = { title: rpd2.title, h5Url: rpd2.h5Url, wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath, eleSchemeUrl: rpd2.eleSchemeUrl };
+        if (rpd2.ok) elemeRedpacketResult = {
+          title: rpd2.title, h5Url: rpd2.h5Url, h5ShortLink: rpd2.h5ShortLink,
+          wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath,
+          alipayMiniUrl: rpd2.alipayMiniUrl, eleSchemeUrl: rpd2.eleSchemeUrl,
+          miniQrcode: rpd2.miniQrcode
+        };
       }
     } catch (_) {}
 
@@ -607,13 +612,18 @@ if (isWaimai || isRedpacket) {
       if (rpd.ok) redpacketInfo = { h5Url: rpd.h5Url, deepLink: rpd.deepLink, wxAppid: rpd.wxAppid, wxPageUrl: rpd.wxPageUrl };
     }
   } catch (_) {}
-  // 饿了么红包（维易 veapi.cn）
+  // 饿了么红包 + 淘宝闪购入口（维易 veapi.cn）
   try {
     var rp2 = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'veapi-eleme'],
       { encoding: 'utf-8', timeout: 10000 });
     if (rp2.status === 0 && rp2.stdout) {
       var rpd2 = JSON.parse(rp2.stdout.trim().split('\n').pop());
-      if (rpd2.ok) elemeRedpacket = { title: rpd2.title, h5Url: rpd2.h5Url, wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath, eleSchemeUrl: rpd2.eleSchemeUrl };
+      if (rpd2.ok) elemeRedpacket = {
+        title: rpd2.title, h5Url: rpd2.h5Url, h5ShortLink: rpd2.h5ShortLink,
+        wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath,
+        alipayMiniUrl: rpd2.alipayMiniUrl, eleSchemeUrl: rpd2.eleSchemeUrl,
+        miniQrcode: rpd2.miniQrcode
+      };
     }
   } catch (_) {}
 }

@@ -336,7 +336,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 ![|134]({imageUrl})
 
 > 🛒 要这个？回复「下单第一个」或「要第一个」直接下单
-> 🧧 [领美团红包]({redpacketUrl})　|　🟠 [领饿了么红包]({elemeRedpacketUrl})
+> 🧧 [领美团红包]({redpacketUrl})　|　🟠 [淘宝闪购下单]({elemeRedpacketUrl})
 
 ---
 
@@ -353,7 +353,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 ![|134]({imageUrl})
 
 > 🛒 要这个？回复「下单第一个」或「要第一个」直接下单
-> 🧧 [领美团红包]({redpacketUrl})　|　🟠 [领饿了么红包]({elemeRedpacketUrl})
+> 🧧 [领美团红包]({redpacketUrl})　|　🟠 [淘宝闪购下单]({elemeRedpacketUrl})
 
 ---
 
