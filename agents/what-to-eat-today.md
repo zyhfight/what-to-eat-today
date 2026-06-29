@@ -318,7 +318,9 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 
 ### 外卖展示格式（diningMode=waimai 时使用）
 
-外卖卡片**不展示「立即下单」按钮**（外卖暂不支持下单），改展示「点此查看」H5 链接。
+外卖推荐自动附带美团红包链接（通过喵有券获取）。每个推荐卡片展示下单链接 + 红包链接。
+
+> 关键：`redpacket` 字段非空时，在每个推荐底部附加红包入口；红包获取失败时静默，不影响推荐。
 
 ```
 🥇 **推荐一：{poiName}**（{brandName}）
@@ -333,7 +335,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 
 ![|134]({imageUrl})
 
-> 📱 外卖商品券，[点此查看]({h5Url})
+> 🛒 [下单]({h5Url})　|　🧧 [先领美团红包]({redpacketUrl})
 
 ---
 
@@ -349,7 +351,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 
 ![|134]({imageUrl})
 
-> 📱 外卖商品券，[点此查看]({h5Url})
+> 🛒 [下单]({h5Url})　|　🧧 [先领美团红包]({redpacketUrl})
 
 ---
 
@@ -364,6 +366,8 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 💡 {reason1} · {reason2}
 
 ![|134]({imageUrl})
+
+> 🛒 [下单]({h5Url})　|　🧧 [先领美团红包]({redpacketUrl})
 
 > 📱 外卖商品券，[点此查看]({h5Url})
 

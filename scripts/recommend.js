@@ -13,6 +13,7 @@
 
 const { spawnSync } = require('child_process');
 const path = require('path');
+const runJs = path.join(__dirname, 'run.js');
 
 function out(obj) { process.stdout.write(JSON.stringify(obj) + '\n'); }
 
@@ -99,7 +100,6 @@ function generateKeywords(args, isWaimai) {
 
 // ── 到店搜索：通过 spawnSync 调用 run.js search（走 cliguard 签名）──
 function searchProducts(keyword, lat, lng, cityId, token) {
-  const runJs = path.join(__dirname, 'run.js');
   const result = spawnSync('node', [runJs, 'search',
     '--keyword', keyword,
     '--lat', lat,
@@ -130,7 +130,6 @@ function searchProducts(keyword, lat, lng, cityId, token) {
 
 // ── 外卖搜索：通过 spawnSync 调用 run.js search-waimai（走联盟 API）──
 function searchWaimaiProducts(keyword, lat, lng) {
-  const runJs = path.join(__dirname, 'run.js');
   const result = spawnSync('node', [runJs, 'search-waimai',
     '--keyword', keyword,
     '--lat', String(lat),
@@ -155,7 +154,6 @@ function searchWaimaiProducts(keyword, lat, lng) {
 
 // ── 饿了么搜索：通过 spawnSync 调用 run.js search-eleme ──
 function searchElemeProducts(keyword, maxPrice, cityCode) {
-  const runJs = path.join(__dirname, 'run.js');
   const cmdArgs = [runJs, 'search-eleme', '--city-code', cityCode];
   if (keyword) cmdArgs.push('--keyword', keyword);
   if (maxPrice > 0) cmdArgs.push('--max-price', String(maxPrice));
@@ -351,7 +349,6 @@ if (isRedpacket) {
   }
 
   // 获取红包链接
-  const runJs = path.join(__dirname, 'run.js');
   let meituanRedpacket = null, elemeRedpacket = null;
 
   function fetchRedpackets() {
@@ -474,7 +471,23 @@ if (waimaiConfigError && isWaimai && token && cityId) {
           reasons: generateReasons(p, budget), fallback: true, fallbackReason: waimaiConfigError.error
         };
       });
-    out({ ok: true, mode, recommendations: top3d, keywords, totalSearched: allDinein.length, fallback: true, fallbackReason: waimaiConfigError.error });
+
+    // 异步获取美团红包（不影响推荐速度，失败静默）
+    var redpacketResult = null;
+    try {
+      var rp = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
+        { encoding: 'utf-8', timeout: 10000 });
+      if (rp.status === 0 && rp.stdout) {
+        var rpd = JSON.parse(rp.stdout.trim().split('\n').pop());
+        if (rpd.ok) redpacketResult = { h5Url: rpd.h5Url, deepLink: rpd.deepLink, wxAppid: rpd.wxAppid, wxPageUrl: rpd.wxPageUrl };
+      }
+    } catch (_) {}
+
+    out({
+      ok: true, mode, recommendations: top3d, keywords, totalSearched: allDinein.length,
+      fallback: true, fallbackReason: waimaiConfigError.error,
+      redpacket: redpacketResult
+    });
   } else {
     out({ ok: false, mode, error: waimaiConfigError.error, message: waimaiConfigError.message, keywords });
   }
@@ -571,4 +584,17 @@ const top3 = Array.from(dedupMap.values())
     return result;
   });
 
-out({ ok: true, mode, recommendations: top3, keywords, totalSearched: allProducts.length });
+// 外卖模式或降级模式：异步获取美团红包（失败静默）
+var redpacketInfo = null;
+if (isWaimai || isRedpacket) {
+  try {
+    var rp = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
+      { encoding: 'utf-8', timeout: 10000 });
+    if (rp.status === 0 && rp.stdout) {
+      var rpd = JSON.parse(rp.stdout.trim().split('\n').pop());
+      if (rpd.ok) redpacketInfo = { h5Url: rpd.h5Url, deepLink: rpd.deepLink, wxAppid: rpd.wxAppid, wxPageUrl: rpd.wxPageUrl };
+    }
+  } catch (_) {}
+}
+
+out({ ok: true, mode, recommendations: top3, keywords, totalSearched: allProducts.length, redpacket: redpacketInfo });
