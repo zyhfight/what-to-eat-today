@@ -1,20 +1,3 @@
 {
-  "aiScene": "a0d4da77f918ab204d86c911fcdd0ce1",
-  "cpsOpen": {
-    "appKey": "YOUR_MEITUAN_APP_KEY",
-    "appSecret": "YOUR_MEITUAN_APP_SECRET",
-    "endpoint": "https://media.meituan.com/cps_open/common/api/v1/query_coupon"
-  },
-  "eleme": {
-    "appKey": "YOUR_TOP_APP_KEY",
-    "appSecret": "YOUR_TOP_APP_SECRET",
-    "pid": "alsc_YOUR_PID",
-    "cityCode": "330100",
-    "endpoint": "https://eco.taobao.com/router/rest"
-  },
-  "aggregate": {
-    "ecapiKey": "YOUR_ECAPI_KEY",
-    "veapiKey": "YOUR_VEAPI_KEY",
-    "endpoint": "http://api.web.ecapi.cn"
-  }
+  "aiScene": "a0d4da77f918ab204d86c911fcdd0ce1"
 }

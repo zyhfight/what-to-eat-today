@@ -1,14 +1,8 @@
 #!/usr/bin/env node
 /**
- * "今天吃什么" 推荐引擎
- * 用法（到店）: node recommend.js --time-slot night --lat 30.34 --lng 120.12 --city-id 50 --token xxx
- *              [--cuisine 火锅,烧烤] [--taste 辣] [--budget 80] [--avoid 不吃辣]
- * 用法（外卖）: node recommend.js --mode waimai --time-slot lunch --lat 30.34 --lng 120.12
- *              [--cuisine 火锅] [--taste 辣] [--budget 50] [--avoid 不吃辣]
- *              [--max-delivery-minutes 30]
- *
- * 外卖模式通过 spawnSync 调用 run.js search-waimai（走美团联盟 query_coupon 接口），
- * 到店模式通过 spawnSync 调用 run.js search（走 cliguard 签名通道）。
+ * "今天吃什么" 推荐引擎（精简版 — 仅到店堂食）
+ * 用法: node recommend.js --time-slot night --lat 30.34 --lng 120.12 --city-id 50 --token xxx
+ *       [--cuisine 火锅,烧烤] [--taste 辣] [--budget 80] [--avoid 不吃辣]
  */
 
 const { spawnSync } = require('child_process');
@@ -30,22 +24,12 @@ function parseArgs(argv) {
   return args;
 }
 
-// ── 到店关键词词库 ──
 const SLOT_KEYWORDS = {
   breakfast: ['包子', '粥', '肠粉', '煎饼', '豆浆油条'],
   lunch: ['快餐', '盖饭', '面条', '麻辣烫', '汉堡'],
   tea: ['奶茶', '咖啡', '甜品', '蛋糕', '面包'],
   dinner: ['火锅', '烧烤', '川菜', '日料', '粤菜'],
   night: ['烧烤', '炸鸡', '小龙虾', '串串', '麻辣烫']
-};
-
-// ── 外卖关键词词库（偏可配送的家常/快餐/饮品）──
-const SLOT_KEYWORDS_WAIMAI = {
-  breakfast: ['包子', '粥铺', '豆浆油条', '煎饼果子', '肠粉'],
-  lunch: ['快餐', '盖饭', '便当', '麻辣烫', '汉堡炸鸡'],
-  tea: ['奶茶', '咖啡', '甜品', '蛋糕', '果汁'],
-  dinner: ['家常菜', '烧烤', '小龙虾', '串串', '披萨'],
-  night: ['烧烤', '炸鸡', '小龙虾', '串串', '烤鱼']
 };
 
 const TASTE_MODIFIERS = {
@@ -60,31 +44,25 @@ const AVOID_BLOCK = {
   '素食': ['肉', '鸡', '鸭', '鱼', '虾', '蟹', '猪', '牛', '羊']
 };
 
-function generateKeywords(args, isWaimai) {
+function generateKeywords(args) {
   let keywords = [];
   const slot = args['time-slot'] || 'dinner';
   const cuisine = args.cuisine || '';
   const taste = args.taste || '';
   const avoid = args.avoid || '';
 
-  // 菜系优先
   if (cuisine) {
     keywords.push(...cuisine.split(/[,，、]/).map(s => s.trim()).filter(Boolean));
   }
-  // 口味修饰
   if (taste && TASTE_MODIFIERS[taste]) {
     for (const m of TASTE_MODIFIERS[taste]) {
       if (!keywords.includes(m) && keywords.length < 5) keywords.push(m);
     }
   }
-  // 时段默认填充
-  const slotKws = isWaimai
-    ? (SLOT_KEYWORDS_WAIMAI[slot] || SLOT_KEYWORDS_WAIMAI.dinner)
-    : (SLOT_KEYWORDS[slot] || SLOT_KEYWORDS.dinner);
+  const slotKws = SLOT_KEYWORDS[slot] || SLOT_KEYWORDS.dinner;
   for (const kw of slotKws) {
     if (!keywords.includes(kw) && keywords.length < 5) keywords.push(kw);
   }
-  // 忌口过滤
   if (avoid) {
     const avoidList = avoid.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
     keywords = keywords.filter(kw => {
@@ -98,15 +76,10 @@ function generateKeywords(args, isWaimai) {
   return keywords.slice(0, 5);
 }
 
-// ── 到店搜索：通过 spawnSync 调用 run.js search（走 cliguard 签名）──
 function searchProducts(keyword, lat, lng, cityId, token) {
   const result = spawnSync('node', [runJs, 'search',
-    '--keyword', keyword,
-    '--lat', lat,
-    '--lng', lng,
-    '--city-id', cityId,
-    '--page', '1',
-    '--page-size', '5'
+    '--keyword', keyword, '--lat', lat, '--lng', lng,
+    '--city-id', cityId, '--page', '1', '--page-size', '5'
   ], { encoding: 'utf-8', timeout: 20000 });
 
   if (result.status !== 0 || !result.stdout) return [];
@@ -128,55 +101,6 @@ function searchProducts(keyword, lat, lng, cityId, token) {
   return [];
 }
 
-// ── 外卖搜索：通过 spawnSync 调用 run.js search-waimai（走联盟 API）──
-function searchWaimaiProducts(keyword, lat, lng) {
-  const result = spawnSync('node', [runJs, 'search-waimai',
-    '--keyword', keyword,
-    '--lat', String(lat),
-    '--lng', String(lng),
-    '--page', '1',
-    '--page-size', '5'
-  ], { encoding: 'utf-8', timeout: 20000 });
-
-  if (result.status !== 0 || !result.stdout) return [];
-  try {
-    const data = JSON.parse(result.stdout.trim().split('\n').pop());
-    if (data.ok && data.productList) {
-      return data.productList;
-    }
-    // 如果返回 CPS_NOT_CONFIGURED，向上传递错误
-    if (data.error === 'CPS_NOT_CONFIGURED') {
-      return { __error: 'CPS_NOT_CONFIGURED', __message: data.message };
-    }
-  } catch (_) {}
-  return [];
-}
-
-// ── 饿了么搜索：通过 spawnSync 调用 run.js search-eleme ──
-function searchElemeProducts(keyword, maxPrice, cityCode) {
-  const cmdArgs = [runJs, 'search-eleme', '--city-code', cityCode];
-  if (keyword) cmdArgs.push('--keyword', keyword);
-  if (maxPrice > 0) cmdArgs.push('--max-price', String(maxPrice));
-  cmdArgs.push('--page', '1', '--page-size', '20');
-
-  const result = spawnSync('node', cmdArgs, { encoding: 'utf-8', timeout: 15000 });
-  if (result.status !== 0 || !result.stdout) return [];
-  try {
-    const data = JSON.parse(result.stdout.trim().split('\n').pop());
-    if (data.error === 'ELEME_NOT_CONFIGURED') {
-      return { __error: 'ELEME_NOT_CONFIGURED', __message: data.message };
-    }
-    if (data.error === 'CACHE_MISS') {
-      return { __error: 'CACHE_MISS', __message: data.message };
-    }
-    if (data.ok && data.productList) {
-      return data.productList;
-    }
-  } catch (_) {}
-  return [];
-}
-
-// ── 到店评分 ──
 function parseDistanceKm(text) {
   if (!text) return 999;
   const km = text.match(/([\d.]+)\s*km/i);
@@ -208,27 +132,6 @@ function calculateScore(p, budget) {
   return rating * 0.4 + distance * 0.3 + bgt * 0.2 + 0.1;
 }
 
-// ── 外卖评分 ──
-// score = 0.25*rating + 0.25*delivery + 0.20*price + 0.20*fee + 0.10*sales
-function calculateWaimaiScore(p, budget, maxDeliveryMinutes) {
-  const rating = (p.poiDpFiveScore || 3.5) / 5.0;
-  // 配送时长（分钟），>60min 归零；用户限时不匹配则大幅降分
-  let duration = p.deliveryDuration || 45;
-  let delivery = Math.max(0, 1 - duration / 60);
-  if (maxDeliveryMinutes > 0 && duration > maxDeliveryMinutes) {
-    delivery *= 0.3;  // 超出用户期望时长，大幅降分
-  }
-  // 预算匹配
-  const price = parseFloat(p.sellPrice) || 0;
-  const bgt = matchBudget(price, budget);
-  // 配送费，>15元归零；免配送费=1.0
-  const fee = Math.max(0, 1 - (p.distributionCost || 0) / 15);
-  // 销量对数归一化（10000 单约=1.0）
-  const sales = Math.min(1, Math.log10((p.saleVolume || 0) + 1) / 4);
-  return rating * 0.25 + delivery * 0.25 + bgt * 0.20 + fee * 0.20 + sales * 0.10;
-}
-
-// ── 到店推荐理由 ──
 function generateReasons(p, budget) {
   const reasons = [];
   if ((p.poiDpFiveScore || 0) >= 4.5) reasons.push(`高评分门店（${p.poiDpFiveScore}分），口碑优秀`);
@@ -242,390 +145,68 @@ function generateReasons(p, budget) {
   return reasons.slice(0, 2);
 }
 
-// ── 外卖推荐理由 ──
-function generateWaimaiReasons(p, budget) {
-  const r = [];
-  if ((p.saleVolume || 0) >= 1000) r.push(`月销 ${p.saleVolumeText || p.saleVolume + '+'}，热门之选`);
-  if ((p.distributionCost || 0) === 0) r.push('免配送费');
-  if ((p.deliveryDuration || 999) <= 30) r.push(`${p.deliveryDuration}分钟极速达`);
-  if ((p.poiDpFiveScore || 0) >= 4.5) r.push(`高评分门店（${p.poiDpFiveScore}分）`);
-  const price = parseFloat(p.sellPrice) || 0;
-  if (budget > 0 && price <= budget) r.push(`¥${price}，在预算内`);
-  else if (price > 0 && price <= 50) r.push(`¥${price}，价格实惠`);
-  if (r.length === 0) r.push('外卖热销');
-  return r.slice(0, 2);
-}
-
-// ── 到店 deeplink ──
-// cdb.meituan.com 在桌面浏览器显示空白引导页，改用 i.meituan.com 中转
-function buildDeeplink(productId, poiId) {
+function buildDeeplink(productId) {
   const h5Url = `https://i.meituan.com/c/deal/${productId}.html`;
-  const deeplink = `imeituan://www.meituan.com/web?url=${encodeURIComponent(h5Url)}`;
-  return { h5Url, deeplink, displayUrl: h5Url };
-}
-
-// ── 饿了么评分算法 ──
-// score = 0.35*(commission/sellPrice) + 0.25*log10(sales+1)/4 + 0.25*budget_match + 0.15*(1-discount)
-function calculateElemeScore(p, budget) {
-  const commRatio = Math.min((p.commission || 0) / Math.max((p.sellPrice || 1), 1), 0.3) / 0.3;
-  const salesNum = parseFloat(p.totalSales) || 0;
-  const salesScore = Math.min(1, Math.log10(salesNum + 1) / 4);
-  const bgt = matchBudget(p.sellPrice || 0, budget);
-  const discountPower = Math.min(1, (1 - (p.discount || 0)) / 0.7);
-  return commRatio * 0.35 + salesScore * 0.25 + bgt * 0.25 + discountPower * 0.15;
-}
-
-// ── 饿了么推荐理由 ──
-function generateElemeReasons(p, budget) {
-  const r = [];
-  if ((p.commission || 0) > 3) r.push(`预估返 ¥${p.commission.toFixed(1)}，高佣好单`);
-  if ((p.totalSales || '0') !== '0') r.push(`已售 ${p.totalSales}，热销爆款`);
-  if ((p.discount || 0) > 0 && (p.discount || 0) < 0.7) r.push(`${Math.round((1-p.discount)*100)}% 折扣，超值`);
-  if ((p.applyShopCount || 0) >= 20) r.push(`${p.applyShopCount} 家门店通用`);
-  const price = p.sellPrice || 0;
-  if (budget > 0 && price <= budget) r.push(`¥${price}，在预算内`);
-  else if (price > 0 && price <= 30) r.push(`¥${price}，价格实惠`);
-  if (r.length === 0) r.push('饿了么热销推荐');
-  return r.slice(0, 2);
-}
-
-// ── 饿了么 deeplink ──
-function buildElemeDeeplink(p) {
-  const h5Url = p.alipayScheme
-    ? p.alipayScheme
-    : `https://h5.ele.me/alsc-item-detail/?itemId=${p.itemId}`;
-  return { h5Url, deeplink: h5Url, displayUrl: h5Url };
-}
-
-// ── 外卖 deeplink ──
-function buildWaimaiDeeplink(p, lat, lng) {
-  const h5Url = p.deeplink || `https://h5.waimai.meituan.com/waimai/mindex/home?lat=${lat}&lng=${lng}`;
   const deeplink = `imeituan://www.meituan.com/web?url=${encodeURIComponent(h5Url)}`;
   return { h5Url, deeplink, displayUrl: h5Url };
 }
 
 // ── Main ──
 const args = parseArgs(process.argv);
-const mode = args.mode || 'dinein';   // dinein | waimai | redpacket
-const platform = args.platform || 'meituan';  // meituan | eleme
-const isWaimai = (mode === 'waimai');
-const isRedpacket = (mode === 'redpacket');
-const isEleme = (platform === 'eleme');
 const lat = args.lat, lng = args.lng, cityId = args['city-id'], token = args.token;
-const cityCode = args['city-code'] || '330100';
 const budget = parseFloat(args.budget) || 0;
-const maxDeliveryMinutes = parseInt(args['max-delivery-minutes'] || '0', 10);
 
-// ── 红包推荐模式：纯品类引导 + 红包链接，不调搜索 API ──
-if (isRedpacket) {
-  const slot = args['time-slot'] || 'dinner';
-  const cuisine = args.cuisine || '';
-  const taste = args.taste || '';
-
-  // 品类推荐词库
-  const SLOT_CATEGORIES = {
-    breakfast: ['包子粥铺', '豆浆油条', '煎饼果子', '肠粉早点'],
-    lunch: ['快餐便当', '麻辣烫', '盖浇饭', '汉堡炸鸡'],
-    tea: ['奶茶咖啡', '甜品蛋糕', '鲜榨果汁'],
-    dinner: ['家常小炒', '火锅', '烧烤', '日韩料理'],
-    night: ['烧烤夜宵', '炸鸡', '小龙虾', '麻辣烫']
-  };
-
-  // 时段描述
-  const SLOT_EMOJI = { breakfast: '🌅', lunch: '☀️', tea: '🫖', dinner: '🌙', night: '🌃' };
-  const SLOT_NAMES = { breakfast: '早餐', lunch: '午餐', tea: '下午茶', dinner: '晚餐', night: '夜宵' };
-
-  let categories = [];
-  if (cuisine) {
-    categories = cuisine.split(/[,，、]/).map(s => s.trim()).filter(Boolean).slice(0, 3);
-  }
-  if (taste) {
-    if (taste.indexOf('辣') !== -1) categories.push('麻辣香锅');
-    if (taste.indexOf('清淡') !== -1) categories.push('轻食沙拉');
-  }
-  const slotCats = SLOT_CATEGORIES[slot] || SLOT_CATEGORIES.dinner;
-  for (const c of slotCats) {
-    if (!categories.includes(c) && categories.length < 3) categories.push(c);
-  }
-
-  // 获取红包链接
-  let meituanRedpacket = null, elemeRedpacket = null;
-
-  function fetchRedpackets() {
-    try {
-      const mt = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
-        { encoding: 'utf-8', timeout: 15000 });
-      if (mt.status === 0 && mt.stdout) {
-        const d = JSON.parse(mt.stdout.trim().split('\n').pop());
-        if (d.ok) meituanRedpacket = d;
-      }
-    } catch (_) {}
-    try {
-      const el = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'eleme'],
-        { encoding: 'utf-8', timeout: 15000 });
-      if (el.status === 0 && el.stdout) {
-        const d = JSON.parse(el.stdout.trim().split('\n').pop());
-        if (d.ok) elemeRedpacket = d;
-      }
-    } catch (_) {}
-  }
-  fetchRedpackets();
-
-  const recommendations = categories.map((cat, i) => ({
-    rank: i + 1,
-    platform: 'redpacket',
-    category: cat,
-    slotName: SLOT_NAMES[slot],
-    slotEmoji: SLOT_EMOJI[slot],
-    meituanH5: meituanRedpacket ? meituanRedpacket.h5Url : '',
-    meituanDeepLink: meituanRedpacket ? meituanRedpacket.deepLink : '',
-    elemeH5: elemeRedpacket ? elemeRedpacket.h5Url : '',
-    elemeDeepLink: elemeRedpacket ? elemeRedpacket.deepLink : ''
-  }));
-
-  out({
-    ok: true, mode: 'redpacket',
-    recommendations: recommendations,
-    meituanRedpacket: meituanRedpacket,
-    elemeRedpacket: elemeRedpacket,
-    meituanError: (!meituanRedpacket) ? (meituanRedpacket || 'AGGREGATE_NOT_CONFIGURED') : null,
-    elemeError: (!elemeRedpacket) ? (elemeRedpacket || 'AGGREGATE_NOT_CONFIGURED') : null
-  });
-  process.exit(0);
-}
-
-// 参数校验
-if (!lat || !lng) {
-  out({ ok: false, error: 'MISSING_PARAMS', message: '缺少 lat/lng 参数' });
-  process.exit(1);
-}
-if (!isWaimai && (!cityId || !token)) {
-  out({ ok: false, error: 'MISSING_PARAMS', message: '到店模式需要 city-id 和 token' });
+if (!lat || !lng || !cityId || !token) {
+  out({ ok: false, error: 'MISSING_PARAMS', message: '需要 lat/lng/city-id/token' });
   process.exit(1);
 }
 
-const keywords = generateKeywords(args, isWaimai);
+const keywords = generateKeywords(args);
 const allProducts = [];
 const seen = new Set();
-let waimaiConfigError = null;
 
 for (const kw of keywords) {
-  let products;
-  if (isWaimai && isEleme) {
-    // 饿了么：从缓存商品池中按关键词筛选
-    products = searchElemeProducts(kw, 0, cityCode);
-    if (products && products.__error) {
-      waimaiConfigError = { error: products.__error, message: products.__message };
-      break;
-    }
-  } else if (isWaimai) {
-    // 美团外卖
-    products = searchWaimaiProducts(kw, lat, lng);
-    if (products && products.__error) {
-      waimaiConfigError = { error: products.__error, message: products.__message };
-      break;
-    }
-  } else {
-    // 到店
-    products = searchProducts(kw, lat, lng, cityId, token);
-  }
-  if (Array.isArray(products)) {
-    for (const p of products) {
-      const key = isEleme ? p.itemId : p.productId;
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        allProducts.push(p);
-      }
+  const products = searchProducts(kw, lat, lng, cityId, token);
+  for (const p of products) {
+    if (p.productId && !seen.has(p.productId)) {
+      seen.add(p.productId);
+      allProducts.push(p);
     }
   }
-}
-
-// 外卖搜索配置错误，自动降级到到店搜索外卖品类（复用 searchProductByAgent）
-if (waimaiConfigError && isWaimai && token && cityId) {
-  // 降级：用 dinein 搜索接口搜外卖品类关键词
-  const allDinein = [];
-  const seen2 = new Set();
-  for (const kw of keywords) {
-    const products = searchProducts(kw, lat, lng, cityId, token);
-    if (Array.isArray(products)) {
-      for (const p of products) {
-        const key = p.productId;
-        if (key && !seen2.has(key)) { seen2.add(key); allDinein.push(p); }
-      }
-    }
-  }
-  if (allDinein.length > 0) {
-    const scored2 = allDinein.map(p => ({ ...p, score: calculateScore(p, budget) }));
-    const dedupMap2 = new Map();
-    for (const p of scored2) {
-      if (!dedupMap2.has(p.poiId) || dedupMap2.get(p.poiId).score < p.score) dedupMap2.set(p.poiId, p);
-    }
-    const top3d = Array.from(dedupMap2.values()).sort((a,b) => b.score - a.score).slice(0, 3)
-      .map((p, i) => {
-        const links = buildDeeplink(p.productId, p.poiId);
-        return {
-          rank: i + 1, platform: 'meituan-dinein-fallback', score: Math.round(p.score * 100) / 100,
-          productId: p.productId, poiId: p.poiId, poiName: p.poiName, productName: p.productName,
-          salePrice: p.salePrice, distanceText: p.distanceText, poiDpFiveScore: p.poiDpFiveScore,
-          imageUrl: p.imageUrl, h5Url: links.h5Url, deeplink: links.deeplink,
-          reasons: generateReasons(p, budget), fallback: true, fallbackReason: waimaiConfigError.error
-        };
-      });
-
-    // 异步获取红包（美团+饿了么，失败静默）
-    var redpacketResult = null;
-    var elemeRedpacketResult = null;
-    try {
-      var rp = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
-        { encoding: 'utf-8', timeout: 10000 });
-      if (rp.status === 0 && rp.stdout) {
-        var rpd = JSON.parse(rp.stdout.trim().split('\n').pop());
-        if (rpd.ok) redpacketResult = { h5Url: rpd.h5Url, deepLink: rpd.deepLink, wxAppid: rpd.wxAppid, wxPageUrl: rpd.wxPageUrl };
-      }
-    } catch (_) {}
-    try {
-      var rp2 = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'veapi-eleme'],
-        { encoding: 'utf-8', timeout: 10000 });
-      if (rp2.status === 0 && rp2.stdout) {
-        var rpd2 = JSON.parse(rp2.stdout.trim().split('\n').pop());
-        if (rpd2.ok) elemeRedpacketResult = {
-          title: rpd2.title, h5Url: rpd2.h5Url, h5ShortLink: rpd2.h5ShortLink,
-          wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath,
-          alipayMiniUrl: rpd2.alipayMiniUrl, eleSchemeUrl: rpd2.eleSchemeUrl,
-          miniQrcode: rpd2.miniQrcode
-        };
-      }
-    } catch (_) {}
-
-    out({
-      ok: true, mode, recommendations: top3d, keywords, totalSearched: allDinein.length,
-      fallback: true, fallbackReason: waimaiConfigError.error,
-      redpacket: redpacketResult,
-      elemeRedpacket: elemeRedpacketResult
-    });
-  } else {
-    out({ ok: false, mode, error: waimaiConfigError.error, message: waimaiConfigError.message, keywords });
-  }
-  process.exit(0);
 }
 
 if (allProducts.length === 0) {
-  out({ ok: true, mode, recommendations: [], keywords, totalSearched: 0 });
+  out({ ok: true, recommendations: [], keywords, totalSearched: 0 });
   process.exit(0);
 }
 
-const scored = allProducts.map(p => ({
-  ...p,
-  score: isEleme
-    ? calculateElemeScore(p, budget)
-    : (isWaimai
-      ? calculateWaimaiScore(p, budget, maxDeliveryMinutes)
-      : calculateScore(p, budget))
-}));
+const scored = allProducts.map(p => ({ ...p, score: calculateScore(p, budget) }));
 
-// 去重 → 保留最高分（饿了么用 itemId，其他用 poiId）
-const dedupMap = new Map();
+const poiMap = new Map();
 for (const p of scored) {
-  const key = isEleme ? p.itemId : p.poiId;
-  if (!dedupMap.has(key) || dedupMap.get(key).score < p.score) dedupMap.set(key, p);
+  if (!poiMap.has(p.poiId) || poiMap.get(p.poiId).score < p.score) poiMap.set(p.poiId, p);
 }
 
-const top3 = Array.from(dedupMap.values())
+const top3 = Array.from(poiMap.values())
   .sort((a, b) => b.score - a.score)
   .slice(0, 3)
   .map((p, i) => {
-    let links;
-    if (isEleme) {
-      links = buildElemeDeeplink(p);
-    } else if (isWaimai) {
-      links = buildWaimaiDeeplink(p, lat, lng);
-    } else {
-      links = buildDeeplink(p.productId, p.poiId);
-    }
-    const result = {
+    const links = buildDeeplink(p.productId);
+    return {
       rank: i + 1,
-      platform: isEleme ? 'eleme' : (isWaimai ? 'meituan-waimai' : 'meituan-dinein'),
+      productId: p.productId,
+      poiId: p.poiId,
+      poiName: p.poiName,
+      productName: p.productName,
+      salePrice: p.salePrice,
+      distanceText: p.distanceText,
+      poiDpFiveScore: p.poiDpFiveScore,
+      imageUrl: p.imageUrl,
       score: Math.round(p.score * 100) / 100,
+      reasons: generateReasons(p, budget),
       h5Url: links.h5Url,
       deeplink: links.deeplink
     };
-    if (isEleme) {
-      result.reasons = generateElemeReasons(p, budget);
-      Object.assign(result, {
-        productId: p.itemId,           // 兼容字段
-        poiId: p.itemId,
-        productName: p.itemName,
-        poiName: p.itemName.split('|')[0] || p.itemName,
-        brandName: '',
-        itemId: p.itemId,
-        itemName: p.itemName,
-        sellPrice: p.sellPrice,
-        originalPrice: p.originalPrice,
-        discount: p.discount,
-        commission: p.commission,
-        commissionRate: p.commissionRate,
-        totalSales: p.totalSales,
-        applyShopCount: p.applyShopCount,
-        applyCityCount: p.applyCityCount,
-        imageUrl: p.imageUrl,
-        ticketPrice: p.ticketPrice,
-        ticketThreshold: p.ticketThreshold,
-        wxAppid: p.wxAppid,
-        wxPath: p.wxPath,
-        alipayScheme: p.alipayScheme
-      });
-    } else if (isWaimai) {
-      result.reasons = generateWaimaiReasons(p, budget);
-      Object.assign(result, {
-        brandName: p.brandName || '',
-        sellPrice: p.sellPrice || '0',
-        imageUrl: p.imageUrl || '',
-        poiDpFiveScore: p.poiDpFiveScore || 0,
-        deliveryDistance: p.deliveryDistance || 0,
-        distributionCost: p.distributionCost || 0,
-        deliveryDuration: p.deliveryDuration || 0,
-        lastDeliveryFee: p.lastDeliveryFee || 0,
-        saleVolume: p.saleVolume || 0,
-        saleVolumeText: p.saleVolumeText || ''
-      });
-    } else {
-      Object.assign(result, {
-        salePrice: p.salePrice || '0',
-        distanceText: p.distanceText || '',
-        poiDpFiveScore: p.poiDpFiveScore || 0,
-        imageUrl: p.imageUrl || ''
-      });
-    }
-    return result;
   });
 
-// 外卖模式或降级模式：异步获取红包（美团 + 饿了么，失败静默）
-var redpacketInfo = null;
-var elemeRedpacket = null;
-if (isWaimai || isRedpacket) {
-  // 美团红包（喵有券）
-  try {
-    var rp = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'meituan'],
-      { encoding: 'utf-8', timeout: 10000 });
-    if (rp.status === 0 && rp.stdout) {
-      var rpd = JSON.parse(rp.stdout.trim().split('\n').pop());
-      if (rpd.ok) redpacketInfo = { h5Url: rpd.h5Url, deepLink: rpd.deepLink, wxAppid: rpd.wxAppid, wxPageUrl: rpd.wxPageUrl };
-    }
-  } catch (_) {}
-  // 饿了么红包 + 淘宝闪购入口（维易 veapi.cn）
-  try {
-    var rp2 = spawnSync('node', [runJs, 'aggregate-redpacket', '--platform', 'veapi-eleme'],
-      { encoding: 'utf-8', timeout: 10000 });
-    if (rp2.status === 0 && rp2.stdout) {
-      var rpd2 = JSON.parse(rp2.stdout.trim().split('\n').pop());
-      if (rpd2.ok) elemeRedpacket = {
-        title: rpd2.title, h5Url: rpd2.h5Url, h5ShortLink: rpd2.h5ShortLink,
-        wxAppid: rpd2.wxAppid, wxPath: rpd2.wxPath,
-        alipayMiniUrl: rpd2.alipayMiniUrl, eleSchemeUrl: rpd2.eleSchemeUrl,
-        miniQrcode: rpd2.miniQrcode
-      };
-    }
-  } catch (_) {}
-}
-
-out({ ok: true, mode, recommendations: top3, keywords, totalSearched: allProducts.length, redpacket: redpacketInfo, elemeRedpacket: elemeRedpacket });
+out({ ok: true, recommendations: top3, keywords, totalSearched: allProducts.length });
