@@ -75,31 +75,31 @@ maxTurns: 50
 
 ### 第一步：初始化美团环境
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" init
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" init
 ```
 
 ### 第二步：获取设备标识和Token
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" get-device-token
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" get-device-token
 ```
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" get-token
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" get-token
 ```
 - `ok: true` → Token 有效，继续
 - `ok: false` → 执行登录流程
 
 ### 登录（仅 Token 无效时）
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" auth-get-code
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" auth-get-code
 ```
 展示登录链接 → 等待授权：
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" auth-poll-token
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" auth-poll-token
 ```
 
 ### 第三步：获取位置
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" location
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" location
 ```
 → 记录 `lat`, `lng`, `cityId`, `formattedAddress`
 
@@ -167,7 +167,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" location
 ### 调用推荐引擎
 
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/recommend.js" \
   --time-slot {时段} --lat {lat} --lng {lng} --city-id {cityId} --token {token} \
   [--cuisine {菜系}] [--taste {口味}] [--budget {预算}] [--avoid {忌口}]
 ```
@@ -260,7 +260,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/recommend.js" \
 ### 发起下单
 
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" order \
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" order \
   --product-id "{productId}" --poi-id "{poiId}" --city-id "{cityId}" \
   --uuid "{deviceToken}" --lat "{lat}" --lng "{lng}" --quantity 1
 ```
@@ -297,7 +297,7 @@ NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" order \
 ### 调用发券接口
 
 ```bash
-NODE_OPTIONS="" node "${CODEBUDDY_PLUGIN_ROOT}/scripts/run.js" issue
+NODE_OPTIONS="" node "${WTET_ROOT}/scripts/run.js" issue
 ```
 
 ### 展示领券结果

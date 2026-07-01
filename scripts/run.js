@@ -37,7 +37,8 @@ const SCRIPTS_DIR = __dirname;
 const SKILL_DIR = path.dirname(SCRIPTS_DIR);
 const CLIENT_ID = 'c6f50b5a1e2f4e2bb00a3e2f58df3ced';
 const PT_PASSPORT_BIN = path.join(SCRIPTS_DIR, 'node_modules', '.bin', 'pt-passport');
-const AUTH_DIR = path.join(require('os').homedir(), '.workbuddy', 'credentials', 'meituan-living-deals-assistant');
+const AUTH_DIR = process.env.WTET_AUTH_DIR
+  || path.join(require('os').homedir(), '.workbuddy', 'credentials', 'meituan-living-deals-assistant');
 const PYTHON = findPython();
 
 // 动态获取 certifi 证书路径，用于修复 macOS Python SSL 证书问题

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>今天吃什么</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, sans-serif; background: #f5f5f5; color: #333; max-width: 600px; margin: 0 auto; }
+    .header { background: linear-gradient(135deg, #ff6034, #ee0a24); color: #fff; padding: 20px; text-align: center; }
+    .header h1 { font-size: 22px; }
+    .header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+    .card { background: #fff; margin: 12px; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 13px; color: #888; margin-bottom: 4px; }
+    .form-group select, .form-group input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+    .btn { display: block; width: 100%; padding: 12px; background: #ee0a24; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+    .btn:disabled { background: #ccc; }
+    .btn-secondary { background: #ff976a; margin-top: 8px; }
+    .recommend { border-left: 3px solid #ee0a24; }
+    .rank { font-size: 20px; font-weight: bold; }
+    .product-name { font-size: 14px; color: #666; margin: 4px 0; }
+    .price { font-size: 18px; color: #ee0a24; font-weight: bold; }
+    .meta { font-size: 12px; color: #999; margin: 4px 0; }
+    .reasons { font-size: 12px; color: #ff976a; margin: 4px 0; }
+    .product-img { width: 100%; border-radius: 8px; margin: 8px 0; }
+    .login-link { color: #ee0a24; text-decoration: none; font-weight: bold; }
+    .status { text-align: center; padding: 20px; color: #999; }
+    .hidden { display: none; }
+    .tag { display: inline-block; background: #fff0e5; color: #ee0a24; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🍜 今天吃什么</h1>
+    <p>智能美食推荐 · 到店堂食 · 领优惠券</p>
+  </div>
+
+  <!-- 登录区域 -->
+  <div id="login-area" class="card">
+    <div id="status-checking" class="status">正在检查登录状态...</div>
+    <div id="status-logged-in" class="status hidden">✅ 已登录美团账号</div>
+    <div id="status-not-logged-in" class="hidden">
+      <p style="margin-bottom: 8px;">请先登录美团账号：</p>
+      <a id="login-link" class="login-link" href="#">获取登录链接...</a>
+      <button id="poll-btn" class="btn btn-secondary hidden" style="margin-top: 12px;">已扫码，确认登录</button>
+    </div>
+  </div>
+
+  <!-- 偏好表单 -->
+  <div id="prefs" class="card hidden">
+    <div class="form-group">
+      <label>时段</label>
+      <select id="time-slot">
+        <option value="breakfast">早餐</option>
+        <option value="lunch" selected>午餐</option>
+        <option value="tea">下午茶</option>
+        <option value="dinner">晚餐</option>
+        <option value="night">夜宵</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>口味偏好</label>
+      <select id="taste">
+        <option value="">无所谓</option>
+        <option value="辣">辣</option>
+        <option value="清淡">清淡</option>
+        <option value="酸甜">酸甜</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>预算（元）</label>
+      <input type="number" id="budget" placeholder="如 50" value="50">
+    </div>
+    <button id="recommend-btn" class="btn">🔍 推荐美食</button>
+    <button id="issue-btn" class="btn btn-secondary">🎫 领取优惠券</button>
+  </div>
+
+  <!-- 推荐结果 -->
+  <div id="results"></div>
+
+  <script>
+    let token = null;
+    let locationData = null;
+
+    // 检查登录状态
+    async function checkStatus() {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      document.getElementById('status-checking').classList.add('hidden');
+      if (data.loggedIn) {
+        document.getElementById('status-logged-in').classList.remove('hidden');
+        document.getElementById('prefs').classList.remove('hidden');
+        token = (await (await fetch('/api/status')).json()).deviceToken;
+        // 获取位置
+        const locRes = await fetch('/api/location');
+        locationData = await locRes.json();
+        if (locationData.ok) {
+          token = locationData.token || null;
+        }
+      } else {
+        document.getElementById('status-not-logged-in').classList.remove('hidden');
+        getLoginLink();
+      }
+    }
+
+    // 获取登录链接
+    async function getLoginLink() {
+      const res = await fetch('/api/login');
+      const data = await res.json();
+      if (data.ok && data.url) {
+        document.getElementById('login-link').href = data.url;
+        document.getElementById('login-link').textContent = data.url;
+        document.getElementById('poll-btn').classList.remove('hidden');
+      }
+    }
+
+    // 轮询登录
+    document.getElementById('poll-btn')?.addEventListener('click', async () => {
+      const res = await fetch('/api/login/poll', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        location.reload();
+      } else {
+        alert('还未授权成功，请先扫码完成授权');
+      }
+    });
+
+    // 推荐
+    document.getElementById('recommend-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('recommend-btn');
+      btn.textContent = '🔍 搜索中...';
+      btn.disabled = true;
+
+      const locRes = await fetch('/api/location');
+      const loc = await locRes.json();
+      if (!loc.ok) { alert('获取位置失败，请重新登录'); return; }
+
+      const res = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lat: loc.lat, lng: loc.lng, cityId: loc.cityId,
+          token: loc.token || token,
+          timeSlot: document.getElementById('time-slot').value,
+          taste: document.getElementById('taste').value,
+          budget: document.getElementById('budget').value
+        })
+      });
+      const data = await res.json();
+      btn.textContent = '🔍 推荐美食';
+      btn.disabled = false;
+
+      if (data.ok && data.recommendations) {
+        renderResults(data.recommendations, loc);
+      } else {
+        document.getElementById('results').innerHTML = '<div class="card status">暂无结果，换个偏好试试</div>';
+      }
+    });
+
+    // 领券
+    document.getElementById('issue-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('issue-btn');
+      btn.textContent = '🎫 领取中...';
+      btn.disabled = true;
+      const res = await fetch('/api/issue', { method: 'POST' });
+      const data = await res.json();
+      btn.textContent = '🎫 领取优惠券';
+      btn.disabled = false;
+
+      if (data.ok && data.coupon_count) {
+        alert(`🎉 领取成功！共 ${data.coupon_count} 张优惠券\n${data.count_str || ''}`);
+      } else {
+        alert('领券失败，请稍后重试');
+      }
+    });
+
+    // 渲染推荐结果
+    function renderResults(recs, loc) {
+      const medals = ['🥇', '🥈', '🥉'];
+      const html = recs.map((r, i) => `
+        <div class="card recommend">
+          <div class="rank">${medals[i] || (i+1)} ${r.poiName || ''}</div>
+          <div class="product-name">🍽️ ${r.productName || ''}</div>
+          <div class="price">¥${r.salePrice} <span class="meta">📍 ${r.distanceText} ⭐ ${r.poiDpFiveScore}</span></div>
+          <div class="reasons">💡 ${(r.reasons || []).join(' · ')}</div>
+          ${r.imageUrl ? `<img class="product-img" src="${r.imageUrl.replace('267h_267w', '134h_134w')}" loading="lazy">` : ''}
+          <button class="btn" onclick="order('${r.productId}', '${r.poiId}', '${loc.cityId}', '${loc.deviceToken || ''}', '${loc.lat}', '${loc.lng}')">🛒 下单</button>
+        </div>
+      `).join('');
+      document.getElementById('results').innerHTML = html;
+    }
+
+    // 下单
+    async function order(productId, poiId, cityId, uuid, lat, lng) {
+      const res = await fetch('/api/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, poiId, cityId, uuid, lat, lng })
+      });
+      const data = await res.json();
+      if (data.ok && data.success) {
+        if (data.payQrCodeImage) {
+          alert(`🎉 下单成功！订单号: ${data.orderId}\n请用美团 App 扫码支付`);
+          window.open(data.payQrCodeImage);
+        } else {
+          alert(`🎉 下单成功！订单号: ${data.orderId}`);
+        }
+      } else {
+        alert('下单失败: ' + (data.message || '未知错误'));
+      }
+    }
+
+    checkStatus();
+  </script>
+</body>
+</html>
