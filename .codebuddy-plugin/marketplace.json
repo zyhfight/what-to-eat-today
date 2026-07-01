@@ -1,0 +1,16 @@
+{
+  "name": "what-to-eat-today",
+  "description": "今天吃什么 — 智能美食推荐专家市场",
+  "owner": {
+    "name": "workbuddy",
+    "email": ""
+  },
+  "plugins": [
+    {
+      "name": "what-to-eat-today",
+      "source": ".",
+      "description": "AI-powered meal recommendation expert — searches nearby restaurants, recommends Top 3, one-click ordering, and coupon claiming.",
+      "version": "1.0.0"
+    }
+  ]
+}

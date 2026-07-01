@@ -13,6 +13,21 @@
 
 ### 1. CodeBuddy 专家
 
+**方式一：一键安装（推荐）**
+
+在 CodeBuddy 中执行：
+```
+/plugin marketplace add zyhfight/what-to-eat-today
+```
+然后：
+```
+/plugin install what-to-eat-today@what-to-eat-today
+```
+
+安装后说「今天吃什么」即可触发。
+
+**方式二：本地安装**
+
 ```bash
 git clone https://github.com/zyhfight/what-to-eat-today.git /tmp/wtet
 bash /tmp/wtet/adapters/codebuddy/install.sh
